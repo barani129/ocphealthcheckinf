@@ -5,7 +5,7 @@
 domain: spark.co.nz
 layout:
 - go.kubebuilder.io/v4
-projectName: ocphealthcheckinf
+projectName: ocphealthcheck
 repo: github.com/barani129/ocphealthcheckinf
 resources:
 - api:
