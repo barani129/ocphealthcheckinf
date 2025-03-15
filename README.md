@@ -5,6 +5,7 @@ Custom Resource Definition for running healthchecks and alerting on Openshift cl
 Custom Resource Definition for running healthchecks and alerting on Openshift clusters
 
 ## Getting Started
+//  To be updated
 
 ### Prerequisites
 - go version v1.23.0+
