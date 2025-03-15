@@ -186,11 +186,12 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	log.Log.Info("Starting node informer")
 	nodeInformer := nsFactory.ForResource(nodeResource).Informer()
 	mcpInformer := nsFactory.ForResource(mcpResource).Informer()
+
 	mux := &sync.RWMutex{}
 	synced := false
 
 	// logic for mcp handling: check if mcp is in progress, if in progress, fetch the node based on labels
-	// mcp.spec.machineConfigSelector.matchLabels
+	// mcp.spec.nodeSelector.matchLabels
 	// check if annotation["machineconfiguration.openshift.io/state"] is set to other than Done
 	// if not, assuming that mcp is actually in progress and exiting, otherwise continue with the flow
 	mcpInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -243,6 +244,8 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	})
 	// go podInformer.Run(context.Background().Done())
 	nsFactory.Start(context.Background().Done())
+	// TO DO:
+	// NNCP, CO, Sub
 	log.Log.Info("Waiting for cache sync")
 	isSynced := cache.WaitForCacheSync(context.Background().Done(), podInformer.HasSynced, nodeInformer.HasSynced, mcpInformer.HasSynced)
 	mux.Lock()
@@ -276,7 +279,7 @@ func onMCPUpdate(newObj interface{}, staticClientSet *kubernetes.Clientset, mcpP
 			if cond.Status == "True" {
 				// Check node annotations to validate it
 				if mcp.Spec.MachineConfigSelector.MatchLabels != nil {
-					actualUpdate, nodeAnno, err := ocphealthcheckutil.CheckNodeMcpAnnotations(staticClientSet, mcp.Spec.MachineConfigSelector.MatchLabels)
+					actualUpdate, nodeAnno, err := ocphealthcheckutil.CheckNodeMcpAnnotations(staticClientSet, mcp.Spec.NodeSelector.MatchLabels)
 					if err != nil {
 						log.Log.Error(err, "unable to check node MCP annotations")
 						return err
@@ -292,7 +295,7 @@ func onMCPUpdate(newObj interface{}, staticClientSet *kubernetes.Clientset, mcpP
 						}
 						return fmt.Errorf("actual mcp update is in progress")
 					} else {
-						nodeAffected, nodeStatus, err := ocphealthcheckutil.CheckNodeReadiness(staticClientSet, mcp.Spec.MachineConfigSelector.MatchLabels)
+						nodeAffected, nodeStatus, err := ocphealthcheckutil.CheckNodeReadiness(staticClientSet, mcp.Spec.NodeSelector.MatchLabels)
 						if err != nil {
 							log.Log.Error(err, "unable to check node status")
 							return err
@@ -304,7 +307,7 @@ func onMCPUpdate(newObj interface{}, staticClientSet *kubernetes.Clientset, mcpP
 								}
 							}
 						} else {
-							log.Log.Info("machineconfig pool %s update is in progress, but all nodes are found ready and schedulable, please check")
+							log.Log.Info(fmt.Sprintf("machineconfig pool %s update is in progress, but all nodes are found ready and schedulable, please check", mcp.Name))
 						}
 					}
 				}
