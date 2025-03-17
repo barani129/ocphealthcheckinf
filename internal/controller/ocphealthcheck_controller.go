@@ -329,39 +329,42 @@ func onMCPUpdate(newObj interface{}, staticClientSet *kubernetes.Clientset, mcpP
 		log.Log.Error(err, "failed to convert")
 		return err
 	}
-	if mcp.Spec.Paused {
-		if !slices.Contains(status.FailedChecks, fmt.Sprintf("mcp %s is paused", mcp.Name)) {
-			if mcpParam.IsMCPInProgress != nil && *mcpParam.IsMCPInProgress {
-				if mcpParam.MCPAnnoNode != "" && mcpParam.MCPAnnoState != "" {
-					log.Log.Info(fmt.Sprintf("MachineConfig %s paused and actual update is in progress and node %s's annotation has been set to state %s", mcp.Name, mcpParam.MCPAnnoNode, mcpParam.MCPAnnoState))
+	if spec.HubCluster != nil && *spec.HubCluster {
+		if mcp.Spec.Paused {
+			if !slices.Contains(status.FailedChecks, fmt.Sprintf("mcp %s is paused", mcp.Name)) {
+				if mcpParam.IsMCPInProgress != nil && *mcpParam.IsMCPInProgress {
+					if mcpParam.MCPAnnoNode != "" && mcpParam.MCPAnnoState != "" {
+						log.Log.Info(fmt.Sprintf("MachineConfig %s paused and actual update is in progress and node %s's annotation has been set to state %s", mcp.Name, mcpParam.MCPAnnoNode, mcpParam.MCPAnnoState))
+						status.FailedChecks = append(status.FailedChecks, fmt.Sprintf("mcp %s is paused", mcp.Name))
+						if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+							ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", "mcp-pause", mcp.Name), spec, fmt.Sprintf("MachineConfig pool %s is paused and actual update is in progress and node %s's annotation has been set to state %s in cluster %s, please execute <oc get mcp %s > to validate it", mcp.Name, mcpParam.MCPAnnoNode, mcpParam.MCPAnnoState, runningHost, mcp.Name))
+						}
+					}
+				} else {
+					log.Log.Info(fmt.Sprintf("MachineConfig %s paused and update is not in progress", mcp.Name))
 					status.FailedChecks = append(status.FailedChecks, fmt.Sprintf("mcp %s is paused", mcp.Name))
 					if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
-						ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", "mcp-pause", mcp.Name), spec, fmt.Sprintf("MachineConfig pool %s is paused and actual update is in progress and node %s's annotation has been set to state %s in cluster %s, please execute <oc get mcp %s > to validate it", mcp.Name, mcpParam.MCPAnnoNode, mcpParam.MCPAnnoState, runningHost, mcp.Name))
+						ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", "mcp-pause", mcp.Name), spec, fmt.Sprintf("MachineConfig pool %s is paused and update is not in progress", mcp.Name))
 					}
 				}
-			} else {
+			}
+		} else {
+			if slices.Contains(status.FailedChecks, fmt.Sprintf("mcp %s is paused", mcp.Name)) {
 				log.Log.Info(fmt.Sprintf("MachineConfig %s paused and update is not in progress", mcp.Name))
-				status.FailedChecks = append(status.FailedChecks, fmt.Sprintf("mcp %s is paused", mcp.Name))
-				if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
-					ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", "mcp-pause", mcp.Name), spec, fmt.Sprintf("MachineConfig pool %s is paused and update is not in progress", mcp.Name))
+				idx := slices.Index(status.FailedChecks, fmt.Sprintf("mcp %s is paused", mcp.Name))
+				if len(status.FailedChecks) == 1 {
+					status.FailedChecks = nil
+				} else {
+					status.FailedChecks = deleteOCPElementSlice(status.FailedChecks, idx)
 				}
+				if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+					ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", "mcp-pause", mcp.Name), spec, fmt.Sprintf("MachineConfig pool %s which was previously paused is now unpaused", mcp.Name))
+				}
+				os.Remove(fmt.Sprintf("/home/golanguser/.%s-%s.txt", "mcp-pause", mcp.Name))
 			}
-		}
-	} else {
-		if slices.Contains(status.FailedChecks, fmt.Sprintf("mcp %s is paused", mcp.Name)) {
-			log.Log.Info(fmt.Sprintf("MachineConfig %s paused and update is not in progress", mcp.Name))
-			idx := slices.Index(status.FailedChecks, fmt.Sprintf("mcp %s is paused", mcp.Name))
-			if len(status.FailedChecks) == 1 {
-				status.FailedChecks = nil
-			} else {
-				status.FailedChecks = deleteOCPElementSlice(status.FailedChecks, idx)
-			}
-			if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
-				ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", "mcp-pause", mcp.Name), spec, fmt.Sprintf("MachineConfig pool %s which was previously paused is now unpaused", mcp.Name))
-			}
-			os.Remove(fmt.Sprintf("/home/golanguser/.%s-%s.txt", "mcp-pause", mcp.Name))
 		}
 	}
+
 	for _, cond := range mcp.Status.Conditions {
 		if cond.Type == "Updating" {
 			if cond.Status == "True" {
