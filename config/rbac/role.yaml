@@ -7,6 +7,14 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - nodes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - pods
   verbs:
   - create
@@ -15,6 +23,14 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - machineconfiguration.openshift.io
+  resources:
+  - machineconfigpools
+  verbs:
+  - get
+  - list
   - watch
 - apiGroups:
   - monitoring.spark.co.nz
@@ -42,3 +58,11 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - policy.open-cluster-management.io
+  resources:
+  - policies
+  verbs:
+  - get
+  - list
+  - watch

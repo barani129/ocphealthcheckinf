@@ -10,6 +10,7 @@ import (
 
 	ocpscanv1 "github.com/barani129/ocphealthcheckinf/api/v1"
 	corev1 "k8s.io/api/core/v1"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
@@ -54,7 +55,11 @@ type OcpAPIConfig struct {
 
 type MCPStruct struct {
 	IsMCPInProgress *bool
-	MCPNode         map[string]string
+	IsNodeAffected  *bool
+	MCPAnnoNode     string
+	MCPAnnoState    string
+	MCPNode         string
+	MCPNodeState    string
 }
 
 const (
@@ -146,7 +151,7 @@ func ReadFile(filename string) (string, error) {
 
 func SendEmailAlert(nodeName string, filename string, spec *ocpscanv1.OcpHealthCheckSpec, alert string) {
 	if _, err := os.Stat(filename); os.IsNotExist(err) {
-		message := fmt.Sprintf(`/usr/bin/printf '%s\n' "Subject: MetallbScan alert from %s" "" "Alert: %s" | /usr/sbin/sendmail -f %s -S %s %s`, "%s", nodeName, alert, spec.Email, spec.RelayHost, spec.Email)
+		message := fmt.Sprintf(`/usr/bin/printf '%s\n' "Subject: OcpHealthCheck alert from %s" "" "Alert: %s" | /usr/sbin/sendmail -f %s -S %s %s`, "%s", nodeName, alert, spec.Email, spec.RelayHost, spec.Email)
 		cmd3 := exec.Command("/bin/bash", "-c", message)
 		err := cmd3.Run()
 		if err != nil {
@@ -156,7 +161,7 @@ func SendEmailAlert(nodeName string, filename string, spec *ocpscanv1.OcpHealthC
 	} else {
 		data, _ := ReadFile(filename)
 		if data != "sent" {
-			message := fmt.Sprintf(`/usr/bin/printf '%s\n' "Subject: MetallbScan alert from %s" "" "Alert: %s" | /usr/sbin/sendmail -f %s -S %s %s`, "%s", nodeName, alert, spec.Email, spec.RelayHost, spec.Email)
+			message := fmt.Sprintf(`/usr/bin/printf '%s\n' "Subject: OcpHealthCheck alert from %s" "" "Alert: %s" | /usr/sbin/sendmail -f %s -S %s %s`, "%s", nodeName, alert, spec.Email, spec.RelayHost, spec.Email)
 			cmd3 := exec.Command("/bin/bash", "-c", message)
 			err := cmd3.Run()
 			if err != nil {
@@ -168,52 +173,127 @@ func SendEmailAlert(nodeName string, filename string, spec *ocpscanv1.OcpHealthC
 	}
 }
 
-func CheckNodeReadiness(clientset *kubernetes.Clientset, nodeLabel map[string]string) (bool, map[string]string, error) {
-	nodeList, err := clientset.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{
-		LabelSelector: labels.Set(nodeLabel).String(),
-	})
-	if err != nil {
-		return false, nil, err
-	}
-	var affectedNode map[string]string
-	for _, node := range nodeList.Items {
-		for _, cond := range node.Status.Conditions {
-			if cond.Type == "Ready" && cond.Status == "True" {
-				affectedNode[node.Name] = "NotReady"
-				return true, affectedNode, nil
+func SendEmailRecoveredAlert(nodeName string, filename string, spec *ocpscanv1.OcpHealthCheckSpec, commandToRun string) {
+	if _, err := os.Stat(filename); os.IsNotExist(err) {
+		//
+	} else {
+		data, err := ReadFile(filename)
+		if err != nil {
+			fmt.Printf("Failed to send the alert: %s", err)
+		}
+		if data == "sent" {
+			message := fmt.Sprintf(`/usr/bin/printf '%s\n' "Subject: OcpHealthCheck alert from %s" ""  "Resolved: %s" | /usr/sbin/sendmail -f %s -S %s %s`, "%s", nodeName, commandToRun, spec.Email, spec.RelayHost, spec.Email)
+			cmd3 := exec.Command("/bin/bash", "-c", message)
+			err := cmd3.Run()
+			if err != nil {
+				fmt.Printf("Failed to send the alert: %s", err)
 			}
 		}
-		if node.Spec.Unschedulable {
-			affectedNode[node.Name] = "unschedulable"
-			return true, affectedNode, nil
-		}
 	}
-	return false, nil, nil
 }
 
-func CheckNodeMcpAnnotations(clientset *kubernetes.Clientset, nodeLabel map[string]string) (bool, map[string]string, error) {
+func GetAPIName(clientset kubernetes.Clientset) (domain string, err error) {
+	var apiconfig OcpAPIConfig
+	cm, err := clientset.CoreV1().ConfigMaps("openshift-apiserver").Get(context.Background(), "config", metav1.GetOptions{})
+	if err != nil {
+		return "", err
+	}
+	data := cm.Data["config.yaml"]
+	err = json.Unmarshal([]byte(data), &apiconfig)
+	if err != nil {
+		return "", err
+	}
+	if apiconfig.RoutingConfig.Subdomain == "" {
+		return "", fmt.Errorf("subdomain is empty")
+	}
+	return apiconfig.RoutingConfig.Subdomain, nil
+}
+
+func EnableMCP(mcp *MCPStruct, nodeName string, val string) {
+	if mcp.IsNodeAffected != nil && !*mcp.IsNodeAffected {
+		a := true
+		mcp.IsNodeAffected = &a
+		mcp.MCPNode = nodeName
+		mcp.MCPNodeState = val
+	}
+}
+
+func EnableMCPAnno(mcp *MCPStruct, nodeName string, val string) {
+	if mcp.IsMCPInProgress != nil && !*mcp.IsMCPInProgress {
+		a := true
+		mcp.IsMCPInProgress = &a
+		mcp.MCPAnnoNode = nodeName
+		mcp.MCPAnnoState = val
+	}
+}
+
+func DisableMCPAnno(mcp *MCPStruct) {
+	if mcp.IsMCPInProgress != nil && !*mcp.IsMCPInProgress {
+		a := false
+		mcp.IsMCPInProgress = &a
+		mcp.MCPAnnoNode = ""
+		mcp.MCPAnnoState = ""
+	}
+}
+
+func DisableMCP(mcp *MCPStruct) {
+	if mcp.IsNodeAffected != nil && *mcp.IsNodeAffected {
+		a := false
+		mcp.IsNodeAffected = &a
+		mcp.MCPNode = ""
+		mcp.MCPNodeState = ""
+	}
+}
+
+func CheckNodeReadiness(clientset *kubernetes.Clientset, nodeLabel map[string]string, mcp *MCPStruct) error {
 	nodeList, err := clientset.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{
 		LabelSelector: labels.Set(nodeLabel).String(),
 	})
 	if err != nil {
-		return false, nil, err
+		return err
 	}
-	var affectedNode map[string]string
+
+	if len(nodeList.Items) > 0 {
+		for _, node := range nodeList.Items {
+			if node.Spec.Unschedulable {
+				EnableMCP(mcp, node.Name, "unschedulable")
+				return nil
+			}
+			for _, cond := range node.Status.Conditions {
+				if cond.Type == "Ready" && cond.Status == "False" {
+					EnableMCP(mcp, node.Name, "NotReady")
+					return nil
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func CheckNodeMcpAnnotations(clientset *kubernetes.Clientset, nodeLabel map[string]string, mcp *MCPStruct) error {
+	nodeList, err := clientset.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{
+		LabelSelector: labels.Set(nodeLabel).String(),
+	})
+	if err != nil {
+		return err
+	}
 	for _, node := range nodeList.Items {
 		for anno, val := range node.Annotations {
 			// to be updated
 			if anno == "machineconfiguration.openshift.io/state" {
 				if val != MACHINECONFIGUPDATEDONE {
-					affectedNode[node.Name] = val
-					return true, affectedNode, nil
+					EnableMCPAnno(mcp, node.Name, val)
+					return nil
+				} else {
+					DisableMCPAnno(mcp)
 				}
 			}
 		}
 	}
-	return false, nil, nil
+	return nil
 }
 
-func ConvertUnStructureToStructured(oldObj interface{}, k8sobj interface{}) (err error) {
+func ConvertUnStructureToStructured(oldObj interface{}, k8sobj interface{}) error {
 	u := oldObj.(*unstructured.Unstructured)
 	unstructuredJSON, err := u.MarshalJSON()
 	if err != nil {
@@ -231,37 +311,34 @@ func OnPodAdd(oldObj interface{}) {
 	err := ConvertUnStructureToStructured(oldObj, po)
 	if err != nil {
 		log.Log.Error(err, "failed to convert")
+		return
 	}
 	log.Log.Info(fmt.Sprintf("pod %s has been added to namespace %s", po.Name, po.Namespace))
 }
 
-func OnPodUpdate(newObj interface{}) {
-	newPo := new(corev1.Pod)
-	err := ConvertUnStructureToStructured(newObj, newPo)
+func OnPodDelete(oldObj interface{}) {
+	po := new(corev1.Pod)
+	err := ConvertUnStructureToStructured(oldObj, po)
 	if err != nil {
 		log.Log.Error(err, "failed to convert")
+		return
 	}
-	for _, newCont := range newPo.Status.ContainerStatuses {
-		if newCont.State.Terminated != nil && newCont.State.Terminated.ExitCode != 0 {
-			log.Log.Info(fmt.Sprintf("pod %s is terminated with non exit code 0 in namespace %s", newPo.Name, newPo.Namespace))
-		}
-		if newCont.State.Waiting != nil {
-			if newCont.State.Waiting.Reason == "CrashLoopBackOff" {
-				log.Log.Info(fmt.Sprintf("pod %s is in waiting with state %s in namespace %s", newPo.Name, newCont.State.Waiting.Reason, newPo.Namespace))
-			} else if newCont.State.Waiting.Reason == "ErrImagePull" {
-				log.Log.Info(fmt.Sprintf("pod %s is in waiting with state %s in namespace %s", newPo.Name, newCont.State.Waiting.Reason, newPo.Namespace))
+	log.Log.Info(fmt.Sprintf("pod %s has been deleted from namespace %s", po.Name, po.Namespace))
+}
+
+func PvHasDifferentNode(clientset *kubernetes.Clientset, pv string, podNode string) (bool, error) {
+	volAttList, err := clientset.StorageV1().VolumeAttachments().List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		return false, nil
+	}
+	for _, volAtt := range volAttList.Items {
+		if volAtt.Spec.Source.PersistentVolumeName != nil && *volAtt.Spec.Source.PersistentVolumeName != "" {
+			if *volAtt.Spec.Source.PersistentVolumeName == pv {
+				if volAtt.Spec.NodeName != podNode {
+					return true, nil
+				}
 			}
 		}
 	}
-}
-
-func OnNodeUpdate(newObj interface{}) {
-	node := new(corev1.Node)
-	err := ConvertUnStructureToStructured(newObj, node)
-	if err != nil {
-		log.Log.Error(err, "failed to convert")
-	}
-	if node.Spec.Unschedulable {
-		log.Log.Info(fmt.Sprintf("Node %s has become unschedulable, please check", node.Name))
-	}
+	return false, nil
 }

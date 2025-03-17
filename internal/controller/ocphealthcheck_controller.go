@@ -19,6 +19,8 @@ package controller
 import (
 	"context"
 	"fmt"
+	"os"
+	"slices"
 	"sync"
 	"time"
 
@@ -26,6 +28,8 @@ import (
 	ocphealthcheckutil "github.com/barani129/ocphealthcheckinf/internal/util"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -35,6 +39,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	ocmpolicy "open-cluster-management.io/governance-policy-propagator/api/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -70,6 +75,9 @@ func (r *OcpHealthCheckReconciler) newOcpHealthChecker() (client.Object, error) 
 // +kubebuilder:rbac:groups=monitoring.spark.co.nz,resources=ocphealthchecks/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=monitoring.spark.co.nz,resources=ocphealthchecks/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
+// +kubebuilder:rbac:groups="machineconfiguration.openshift.io",resources=machineconfigpools,verbs=get;list;watch
+// +kubebuilder:rbac:groups="policy.open-cluster-management.io",resources=policies,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -95,7 +103,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		log.Log.Info("OcpHealthCheck is not found")
 		return ctrl.Result{}, nil
 	}
-	_, status, err := ocphealthcheckutil.GetSpecAndStatus(ocpScan)
+	spec, status, err := ocphealthcheckutil.GetSpecAndStatus(ocpScan)
 	if err != nil {
 		log.Log.Error(err, "unable to retrieve OcpHealthCheck spec and status")
 		return ctrl.Result{}, err
@@ -153,6 +161,19 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
+	var runningHost string
+	domain, err := ocphealthcheckutil.GetAPIName(*staticClientSet)
+	if err == nil && domain == "" {
+		if spec.Cluster != nil {
+			runningHost = *spec.Cluster
+		}
+	} else if err == nil && domain != "" {
+		runningHost = domain
+	} else {
+		log.Log.Error(err, "unable to retrieve ocp config")
+		runningHost = "local-cluster"
+	}
+
 	// var defaultHealthCheckInterval time.Duration
 	// if spec.CheckInterval != nil {
 	// 	defaultHealthCheckInterval = time.Minute * time.Duration(*spec.CheckInterval)
@@ -176,16 +197,28 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		Version:  "v1",
 		Resource: "machineconfigpools",
 	}
+
+	policyResource := schema.GroupVersionResource{
+		Group:    "policy.open-cluster-management.io",
+		Version:  "v1",
+		Resource: "policies",
+	}
+
 	b := false
-	var mcpParam = new(ocphealthcheckutil.MCPStruct)
-	mcpParam.IsMCPInProgress = &b
+	mcpParam := ocphealthcheckutil.MCPStruct{
+		IsMCPInProgress: &b,
+		IsNodeAffected:  &b,
+		MCPAnnoNode:     "",
+		MCPNode:         "",
+		MCPAnnoState:    "",
+		MCPNodeState:    "",
+	}
 	log.Log.Info("Starting dynamic informer factory")
 	nsFactory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(clientset, time.Minute, corev1.NamespaceAll, nil)
-	log.Log.Info("Starting pod informer")
-	podInformer := nsFactory.ForResource(podResource).Informer()
-	log.Log.Info("Starting node informer")
-	nodeInformer := nsFactory.ForResource(nodeResource).Informer()
 	mcpInformer := nsFactory.ForResource(mcpResource).Informer()
+	podInformer := nsFactory.ForResource(podResource).Informer()
+	nodeInformer := nsFactory.ForResource(nodeResource).Informer()
+	policyInformer := nsFactory.ForResource(policyResource).Informer()
 
 	mux := &sync.RWMutex{}
 	synced := false
@@ -201,11 +234,11 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if !synced {
 				return
 			}
-			err := onMCPUpdate(newObj, staticClientSet, mcpParam)
+			err := onMCPUpdate(newObj, staticClientSet, &mcpParam, status, spec, runningHost)
 			if err != nil {
+				log.Log.Info("It is possible that actual MachineConfigPool is in progress/unable to retrieve the APIs")
 				return
 			}
-			log.Log.Info("MachineConfigUpdate is not progress, proceeding further")
 		},
 	})
 	log.Log.Info("Adding add pod events to pod informer")
@@ -225,11 +258,18 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				return
 			}
 			if mcpParam.IsMCPInProgress != nil && !*mcpParam.IsMCPInProgress {
-				ocphealthcheckutil.OnPodUpdate(oldObj)
+				OnPodUpdate(newObj, spec, status, runningHost, staticClientSet)
 			}
 		},
+		DeleteFunc: func(obj interface{}) {
+			mux.RLock()
+			defer mux.RUnlock()
+			if !synced {
+				return
+			}
+			ocphealthcheckutil.OnPodDelete(obj)
+		},
 	})
-	log.Log.Info("Running pod informer")
 	nodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			mux.RLock()
@@ -238,7 +278,19 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				return
 			}
 			if mcpParam.IsMCPInProgress != nil && !*mcpParam.IsMCPInProgress {
-				ocphealthcheckutil.OnNodeUpdate(newObj)
+				OnNodeUpdate(newObj, spec, status, runningHost, &mcpParam)
+			}
+		},
+	})
+	policyInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			mux.RLock()
+			defer mux.RUnlock()
+			if !synced {
+				return
+			}
+			if mcpParam.IsMCPInProgress != nil && !*mcpParam.IsMCPInProgress {
+				OnPolicyUpdate(newObj, spec, status, runningHost)
 			}
 		},
 	})
@@ -247,7 +299,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// TO DO:
 	// NNCP, CO, Sub
 	log.Log.Info("Waiting for cache sync")
-	isSynced := cache.WaitForCacheSync(context.Background().Done(), podInformer.HasSynced, nodeInformer.HasSynced, mcpInformer.HasSynced)
+	isSynced := cache.WaitForCacheSync(context.Background().Done(), podInformer.HasSynced, nodeInformer.HasSynced, mcpInformer.HasSynced, policyInformer.HasSynced)
 	mux.Lock()
 	synced = isSynced
 	mux.Unlock()
@@ -268,51 +320,352 @@ func (r *OcpHealthCheckReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func onMCPUpdate(newObj interface{}, staticClientSet *kubernetes.Clientset, mcpParam *ocphealthcheckutil.MCPStruct) error {
+func onMCPUpdate(newObj interface{}, staticClientSet *kubernetes.Clientset, mcpParam *ocphealthcheckutil.MCPStruct, status *ocphealthcheckv1.OcpHealthCheckStatus, spec *ocphealthcheckv1.OcpHealthCheckSpec, runningHost string) error {
 	mcp := new(mcfgv1.MachineConfigPool)
 	err := ocphealthcheckutil.ConvertUnStructureToStructured(newObj, mcp)
 	if err != nil {
 		log.Log.Error(err, "failed to convert")
+		return err
+	}
+	if mcp.Spec.Paused {
+		if !slices.Contains(status.FailedChecks, fmt.Sprintf("mcp %s is paused", mcp.Name)) {
+			if mcpParam.IsMCPInProgress != nil && *mcpParam.IsMCPInProgress {
+				if mcpParam.MCPAnnoNode != "" && mcpParam.MCPAnnoState != "" {
+					log.Log.Info(fmt.Sprintf("MachineConfig %s paused and actual update is in progress and node %s's annotation has been set to state %s", mcp.Name, mcpParam.MCPAnnoNode, mcpParam.MCPAnnoState))
+					status.FailedChecks = append(status.FailedChecks, fmt.Sprintf("mcp %s is paused", mcp.Name))
+					if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+						ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", "mcp-pause", mcp.Name), spec, fmt.Sprintf("MachineConfig pool %s is paused and actual update is in progress and node %s's annotation has been set to state %s in cluster %s, please execute <oc get mcp %s > to validate it", mcp.Name, mcpParam.MCPAnnoNode, mcpParam.MCPAnnoState, runningHost, mcp.Name))
+					}
+				}
+			} else {
+				log.Log.Info(fmt.Sprintf("MachineConfig %s paused and update is not in progress", mcp.Name))
+				status.FailedChecks = append(status.FailedChecks, fmt.Sprintf("mcp %s is paused", mcp.Name))
+				if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+					ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", "mcp-pause", mcp.Name), spec, fmt.Sprintf("MachineConfig pool %s is paused and update is not in progress", mcp.Name))
+				}
+			}
+		}
+	} else {
+		if slices.Contains(status.FailedChecks, fmt.Sprintf("mcp %s is paused", mcp.Name)) {
+			log.Log.Info(fmt.Sprintf("MachineConfig %s paused and update is not in progress", mcp.Name))
+			idx := slices.Index(status.FailedChecks, fmt.Sprintf("mcp %s is paused", mcp.Name))
+			if len(status.FailedChecks) == 1 {
+				status.FailedChecks = nil
+			} else {
+				status.FailedChecks = deleteOCPElementSlice(status.FailedChecks, idx)
+			}
+			if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+				ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", "mcp-pause", mcp.Name), spec, fmt.Sprintf("MachineConfig pool %s which was previously paused is now unpaused", mcp.Name))
+			}
+			os.Remove(fmt.Sprintf("/home/golanguser/.%s-%s.txt", "mcp-pause", mcp.Name))
+		}
 	}
 	for _, cond := range mcp.Status.Conditions {
 		if cond.Type == "Updating" {
 			if cond.Status == "True" {
 				// Check node annotations to validate it
 				if mcp.Spec.MachineConfigSelector.MatchLabels != nil {
-					actualUpdate, nodeAnno, err := ocphealthcheckutil.CheckNodeMcpAnnotations(staticClientSet, mcp.Spec.NodeSelector.MatchLabels)
-					if err != nil {
-						log.Log.Error(err, "unable to check node MCP annotations")
-						return err
-					}
-					if actualUpdate {
-						a := true
-						mcpParam.IsMCPInProgress = &a
-						if len(nodeAnno) > 0 {
-							mcpParam.MCPNode = nodeAnno
-							for nodeA, state := range mcpParam.MCPNode {
-								log.Log.Info(fmt.Sprintf("MachineConfig pool %s update is in progress and node %s's annotation has been set to state %s, please check ", mcp.Name, nodeA, state))
+					// err := ocphealthcheckutil.CheckNodeMcpAnnotations(staticClientSet, mcp.Spec.NodeSelector.MatchLabels, mcpParam)
+					// if err != nil {
+					// 	log.Log.Error(err, "unable to check node MCP annotations")
+					// 	return err
+					// }
+					if mcpParam.IsMCPInProgress != nil && *mcpParam.IsMCPInProgress {
+						if mcpParam.MCPAnnoNode != "" && mcpParam.MCPAnnoState != "" {
+							if !slices.Contains(status.FailedChecks, fmt.Sprintf("mcp %s update is in progress", mcp.Name)) {
+								log.Log.Info(fmt.Sprintf("MachineConfig %s update is in progress and node %s's annotation has been set to state %s", mcp.Name, mcpParam.MCPAnnoNode, mcpParam.MCPAnnoState))
+								status.FailedChecks = append(status.FailedChecks, fmt.Sprintf("mcp %s update is in progress", mcp.Name))
+								if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+									ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", "mcp", mcp.Name), spec, fmt.Sprintf("MachineConfig pool %s update is in progress and node %s's annotation has been set to state %s in cluster %s, please execute <oc get mcp %s > to validate it", mcp.Name, mcpParam.MCPAnnoNode, mcpParam.MCPAnnoState, runningHost, mcp.Name))
+								}
 							}
 						}
 						return fmt.Errorf("actual mcp update is in progress")
 					} else {
-						nodeAffected, nodeStatus, err := ocphealthcheckutil.CheckNodeReadiness(staticClientSet, mcp.Spec.NodeSelector.MatchLabels)
-						if err != nil {
-							log.Log.Error(err, "unable to check node status")
-							return err
-						}
-						if nodeAffected {
-							if len(nodeStatus) > 0 {
-								for nodeS, status := range nodeStatus {
-									log.Log.Info(fmt.Sprintf("MachineConfig pool %s update has been set to true, node %s has become %s, possible manual action", mcp.Name, nodeS, status))
+						if mcpParam.IsNodeAffected != nil && *mcpParam.IsNodeAffected {
+							if mcpParam.MCPNode != "" && mcpParam.MCPNodeState != "" {
+								if !slices.Contains(status.FailedChecks, fmt.Sprintf("mcp %s update is in progress", mcp.Name)) {
+									log.Log.Info(fmt.Sprintf("machineconfig pool %s update is in progress, node %s has become %s, possible manual action", mcp.Name, mcpParam.MCPNode, mcpParam.MCPNodeState))
+									status.FailedChecks = append(status.FailedChecks, fmt.Sprintf("mcp %s update is in progress", mcp.Name))
+									if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+										ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", "mcp", mcp.Name), spec, fmt.Sprintf("MachineConfig pool %s update has been set to true, node %s has become %s, possible manual action in cluster %s, please execute <oc get mcp %s and oc get nodes to validate it", mcp.Name, mcpParam.MCPNode, mcpParam.MCPNodeState, runningHost, mcp.Name))
+									}
 								}
 							}
 						} else {
-							log.Log.Info(fmt.Sprintf("machineconfig pool %s update is in progress, but all nodes are found ready and schedulable, please check", mcp.Name))
+							if !slices.Contains(status.FailedChecks, fmt.Sprintf("mcp %s update is in progress", mcp.Name)) {
+								log.Log.Info(fmt.Sprintf("machineconfig pool %s update is in progress, but nodes are healthy and schedulable", mcp.Name))
+								status.FailedChecks = append(status.FailedChecks, fmt.Sprintf("mcp %s update is in progress", mcp.Name))
+								if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+									ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", "mcp", mcp.Name), spec, fmt.Sprintf("MachineConfig pool %s update has been set to true, but nodes are healthy and schedulable, mcp is probably just starting now, in cluster %s, please execute <oc get mcp %s and oc get nodes> to validate it", mcp.Name, runningHost, mcp.Name))
+								}
+							}
 						}
+					}
+				}
+			} else if cond.Status == "False" {
+				ocphealthcheckutil.DisableMCPAnno(mcpParam)
+				if slices.Contains(status.FailedChecks, fmt.Sprintf("mcp %s update is in progress", mcp.Name)) {
+					if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+						ocphealthcheckutil.SendEmailRecoveredAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", "mcp", mcp.Name), spec, fmt.Sprintf("MachineConfig pool %s update is no longer in progress in cluster %s, please execute <oc get mcp %s > to validate it", mcp.Name, runningHost, mcp.Name))
+					}
+					idx := slices.Index(status.FailedChecks, fmt.Sprintf("mcp %s update is in progress", mcp.Name))
+					if len(status.FailedChecks) == 1 {
+						status.FailedChecks = nil
+					} else {
+						status.FailedChecks = deleteOCPElementSlice(status.FailedChecks, idx)
+					}
+					os.Remove(fmt.Sprintf("/home/golanguser/.%s-%s.txt", "mcp", mcp.Name))
+				}
+			}
+		} else if cond.Type == "Degraded" {
+			if cond.Status == "True" {
+				if !slices.Contains(status.FailedChecks, fmt.Sprintf("mcp %s is degraded", mcp.Name)) {
+					log.Log.Info(fmt.Sprintf("machineconfig pool %s is degraded", mcp.Name))
+					status.FailedChecks = append(status.FailedChecks, fmt.Sprintf("mcp %s is degraded", mcp.Name))
+					if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+						ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", "mcp", mcp.Name), spec, fmt.Sprintf("MachineConfig pool %s is degraded in cluster %s, please execute <oc get mcp %s and oc get nodes> to validate it", mcp.Name, runningHost, mcp.Name))
+					}
+				}
+			} else if cond.Status == "False" {
+				if slices.Contains(status.FailedChecks, fmt.Sprintf("mcp %s is degraded", mcp.Name)) {
+					log.Log.Info(fmt.Sprintf("machineconfig pool %s is back to not degraded state", mcp.Name))
+					idx := slices.Index(status.FailedChecks, fmt.Sprintf("mcp %s is degraded", mcp.Name))
+					if len(status.FailedChecks) == 1 {
+						status.FailedChecks = nil
+					} else {
+						status.FailedChecks = deleteOCPElementSlice(status.FailedChecks, idx)
+					}
+					if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+						ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", "mcp", mcp.Name), spec, fmt.Sprintf("MachineConfig pool %s is degraded in cluster %s, please execute <oc get mcp %s and oc get nodes> to validate it", mcp.Name, runningHost, mcp.Name))
 					}
 				}
 			}
 		}
 	}
 	return nil
+}
+
+func podLastRestartTimerUp(timeStr string) bool {
+	oldTime, err := time.Parse(time.RFC3339, timeStr)
+	if err != nil {
+		return false
+	}
+	var timePast bool
+	currTime := time.Now().Add(-30 * time.Minute)
+	timePast = oldTime.Before(currTime)
+	return timePast
+}
+
+func OnPodUpdate(newObj interface{}, spec *ocphealthcheckv1.OcpHealthCheckSpec, status *ocphealthcheckv1.OcpHealthCheckStatus, runningHost string, clientset *kubernetes.Clientset) {
+	newPo := new(corev1.Pod)
+	err := ocphealthcheckutil.ConvertUnStructureToStructured(newObj, newPo)
+	if err != nil {
+		log.Log.Error(err, "failed to convert")
+		return
+	}
+	for _, newCont := range newPo.Status.ContainerStatuses {
+		if newCont.State.Terminated != nil && newCont.State.Terminated.ExitCode != 0 {
+			if !slices.Contains(status.FailedChecks, fmt.Sprintf("pod %s's container %s is terminated with non exit code 0 in namespace %s", newPo.Name, newCont.Name, newPo.Namespace)) {
+				log.Log.Info(fmt.Sprintf("pod %s's container %s is terminated with non exit code 0 in namespace %s", newPo.Name, newCont.Name, newPo.Namespace))
+				status.FailedChecks = append(status.FailedChecks, fmt.Sprintf("pod %s's container %s is terminated with non exit code 0 in namespace %s", newPo.Name, newCont.Name, newPo.Namespace))
+				if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+					ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), spec, fmt.Sprintf("pod %s's container %s is terminated with non exit code 0 in namespace %s in cluster %s", newPo.Name, newCont.Name, newPo.Namespace, runningHost))
+				}
+			}
+		} else if newCont.State.Running != nil || (newCont.State.Terminated != nil && newCont.State.Terminated.ExitCode == 0) {
+			// Assuming if pod has moved back to running from CrashLoopBackOff/others, the restart count will always be greater than 0
+			if newCont.RestartCount > 0 {
+				if newCont.LastTerminationState.Terminated != nil && newCont.LastTerminationState.Terminated.ExitCode != 0 && newCont.LastTerminationState.Terminated.FinishedAt.String() != "" {
+					if podLastRestartTimerUp(newCont.LastTerminationState.Terminated.FinishedAt.String()) {
+						if slices.Contains(status.FailedChecks, fmt.Sprintf("pod %s's container %s is terminated with non exit code 0 in namespace %s", newPo.Name, newCont.Name, newPo.Namespace)) {
+							log.Log.Info(fmt.Sprintf("pod %s's container %s is either running/completed in namespace %s", newPo.Name, newCont.Name, newPo.Namespace))
+							idx := slices.Index(status.FailedChecks, fmt.Sprintf("pod %s's container %s is terminated with non exit code 0 in namespace %s", newPo.Name, newCont.Name, newPo.Namespace))
+							if len(status.FailedChecks) == 1 {
+								status.FailedChecks = nil
+							} else {
+								status.FailedChecks = deleteOCPElementSlice(status.FailedChecks, idx)
+							}
+							if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+								ocphealthcheckutil.SendEmailRecoveredAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", newPo.Name, newCont.Name), spec, fmt.Sprintf("pod %s's container %s which was previously terminated with non exit code 0 is now either running/completed in namespace %s in cluster %s ", newPo.Name, newCont.Name, newPo.Namespace, runningHost))
+							}
+							os.Remove(fmt.Sprintf("/home/golanguser/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace))
+						}
+					}
+				}
+			}
+		}
+		if newCont.State.Waiting != nil {
+			if newCont.State.Waiting.Reason == "CrashLoopBackOff" {
+				if !slices.Contains(status.FailedChecks, fmt.Sprintf("pod %s cont %s crashloopbackoff in namespace %s", newPo.Name, newCont.Name, newPo.Namespace)) {
+					log.Log.Info(fmt.Sprintf("pod %s's container %s is in CrashLoopBackOff state in namespace %s", newPo.Name, newCont.Name, newPo.Namespace))
+					status.FailedChecks = append(status.FailedChecks, fmt.Sprintf("pod %s cont %s crashloopbackoff in namespace %s", newPo.Name, newCont.Name, newPo.Namespace))
+					if len(newPo.Spec.Volumes) > 0 {
+						for _, vol := range newPo.Spec.Volumes {
+							if vol.PersistentVolumeClaim != nil && vol.PersistentVolumeClaim.ClaimName != "" {
+								// Get the persistent volume claim name
+								pvc, err := clientset.CoreV1().PersistentVolumeClaims(newPo.Namespace).Get(context.Background(), vol.PersistentVolumeClaim.ClaimName, metav1.GetOptions{})
+								if err != nil {
+									if k8serrors.IsNotFound(err) {
+										if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+											ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s-%s.txt", newPo, newCont.Name, newPo.Namespace), spec, fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, configured PVC %s doesn't exist in namespace %s in cluster %s, please execute <oc get pods %s -n %s -o json | jq .spec.volumes[] and oc get pvc %s -n %s -o json | jq .spec.volumeName> to validate it", newPo.Name, newCont.Name, pvc.Name, pvc.Namespace, runningHost, newPo.Name, newPo.Namespace, pvc.Name, pvc.Namespace))
+										}
+									} else {
+										if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+											ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s-%s.txt", newPo, newCont.Name, newPo.Namespace), spec, fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, unable to retrieve configured PVC %s in namespace %s in cluster %s, please execute <oc get pods %s -n %s -o json | jq .spec.volumes[] and oc get pvc %s -n %s -o json | jq .spec.volumeName> to validate it", newPo.Name, newCont.Name, pvc.Name, pvc.Namespace, runningHost, newPo.Name, newPo.Namespace, pvc.Name, pvc.Namespace))
+										}
+									}
+								}
+								if affected, err := ocphealthcheckutil.PvHasDifferentNode(clientset, pvc.Spec.VolumeName, newPo.Spec.NodeName); err != nil {
+									if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+										ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s-%s.txt", newPo, newCont.Name, newPo.Namespace), spec, fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, unable to retrieve volume attachment of volume %s in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses and oc get volumeattachments | grep %s > to validate it", newPo.Name, newCont.Name, pvc.Spec.VolumeName, runningHost, newPo, newPo.Namespace, pvc.Spec.VolumeName))
+									}
+								} else if err == nil && affected {
+									if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+										ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s-%s.txt", newPo, newCont.Name, newPo.Namespace), spec, fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, volume attachment of volume %s is mounted on a different node in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses and oc get volumeattachments | grep %s > to validate it", newPo.Name, newCont.Name, pvc.Spec.VolumeName, runningHost, newPo, newPo.Namespace, pvc.Spec.VolumeName))
+									}
+								} else {
+									if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+										ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s-%s.txt", newPo, newCont.Name, newPo.Namespace), spec, fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, volume attachment of volume %s is mounted on the SAME node, issue could be related to image pull in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses and oc get volumeattachments | grep %s > to validate it", newPo.Name, newCont.Name, pvc.Spec.VolumeName, runningHost, newPo, newPo.Namespace, pvc.Spec.VolumeName))
+									}
+								}
+							} else {
+								if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+									ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), spec, fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, no persistent volume is attached to the pod, issue could be related to other issues like image pull failure, in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses> to validate it", newPo.Name, newCont.Name, runningHost, newPo.Name, newPo.Namespace))
+								}
+							}
+						}
+					}
+				}
+			}
+		} else {
+			// Assuming if pod has moved back to running from CrashLoopBackOff/others, the restart count will always be greater than 0
+			if newCont.RestartCount > 0 {
+				if newCont.LastTerminationState.Terminated != nil && newCont.LastTerminationState.Terminated.ExitCode != 0 && newCont.LastTerminationState.Terminated.FinishedAt.String() != "" {
+					if podLastRestartTimerUp(newCont.LastTerminationState.Terminated.FinishedAt.String()) {
+						if slices.Contains(status.FailedChecks, fmt.Sprintf("pod %s cont %s crashloopbackoff in namespace %s", newPo.Name, newCont.Name, newPo.Namespace)) {
+							log.Log.Info(fmt.Sprintf("pod %s's container %s is either running/completed in namespace %s", newPo.Name, newCont.Name, newPo.Namespace))
+							idx := slices.Index(status.FailedChecks, fmt.Sprintf("pod %s cont %s crashloopbackoff in namespace %s", newPo.Name, newCont.Name, newPo.Namespace))
+							if len(status.FailedChecks) == 1 {
+								status.FailedChecks = nil
+							} else {
+								status.FailedChecks = deleteOCPElementSlice(status.FailedChecks, idx)
+							}
+							if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+								ocphealthcheckutil.SendEmailRecoveredAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), spec, fmt.Sprintf("pod %s's container %s which was previously terminated with non exit code 0 is now either running/completed in namespace %s in cluster %s ", newPo.Name, newCont.Name, newPo.Namespace, runningHost))
+							}
+							os.Remove(fmt.Sprintf("/home/golanguser/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace))
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+func deleteOCPElementSlice(slice []string, index int) []string {
+	return append(slice[:index], slice[index+1:]...)
+}
+
+func OnNodeUpdate(newObj interface{}, spec *ocphealthcheckv1.OcpHealthCheckSpec, status *ocphealthcheckv1.OcpHealthCheckStatus, runningHost string, mcp *ocphealthcheckutil.MCPStruct) {
+	node := new(corev1.Node)
+	err := ocphealthcheckutil.ConvertUnStructureToStructured(newObj, node)
+	if err != nil {
+		log.Log.Error(err, "failed to convert")
+		return
+	}
+	for anno, val := range node.Annotations {
+		// to be updated
+		if anno == "machineconfiguration.openshift.io/state" {
+			if val != MACHINECONFIGUPDATEDONE {
+				ocphealthcheckutil.EnableMCPAnno(mcp, node.Name, val)
+			} else {
+				ocphealthcheckutil.DisableMCPAnno(mcp)
+			}
+		}
+	}
+	if node.Spec.Unschedulable {
+		if !slices.Contains(status.FailedChecks, fmt.Sprintf("node %s has become unschedulable", node.Name)) {
+			ocphealthcheckutil.EnableMCP(mcp, node.Name, "Unschedulable")
+			log.Log.Info(fmt.Sprintf("node %s has become unschedulable", node.Name))
+			status.FailedChecks = append(status.FailedChecks, fmt.Sprintf("node %s has become unschedulable", node.Name))
+			if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+				ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", node.Name, "sched"), spec, fmt.Sprintf("node %s has become unschedulable in cluster %s, please execute <oc get nodes %s > to validate it", node.Name, runningHost, node.Name))
+			}
+		}
+	} else {
+		if slices.Contains(status.FailedChecks, fmt.Sprintf("node %s has become unschedulable", node.Name)) {
+			ocphealthcheckutil.DisableMCP(mcp)
+			log.Log.Info(fmt.Sprintf("node %s has become schedulable again", node.Name))
+			idx := slices.Index(status.FailedChecks, fmt.Sprintf("node %s has become unschedulable", node.Name))
+			if len(status.FailedChecks) == 1 {
+				status.FailedChecks = nil
+			} else {
+				status.FailedChecks = deleteOCPElementSlice(status.FailedChecks, idx)
+			}
+			if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+				ocphealthcheckutil.SendEmailRecoveredAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", node.Name, "sched"), spec, fmt.Sprintf("node %s which was previously unschedulable is now schedulable again in cluster %s", node.Name, runningHost))
+			}
+			os.Remove(fmt.Sprintf("/home/golanguser/.%s-%s.txt", node.Name, "sched"))
+		}
+	}
+	for _, cond := range node.Status.Conditions {
+		if cond.Type == "Ready" && cond.Status == "False" {
+			if !slices.Contains(status.FailedChecks, fmt.Sprintf("node %s has become NotReady", node.Name)) {
+				ocphealthcheckutil.EnableMCP(mcp, node.Name, "NotReady")
+				log.Log.Info(fmt.Sprintf("node %s has become NotReady", node.Name))
+				status.FailedChecks = append(status.FailedChecks, fmt.Sprintf("node %s has become NotReady", node.Name))
+				if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+					ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", node.Name, "ready"), spec, fmt.Sprintf("node %s has become NotReady in cluster %s, please execute <oc get nodes %s > to validate it", node.Name, runningHost, node.Name))
+				}
+			}
+		} else if cond.Type == "Ready" && cond.Status == "True" {
+			if slices.Contains(status.FailedChecks, fmt.Sprintf("node %s has become NotReady", node.Name)) {
+				ocphealthcheckutil.DisableMCP(mcp)
+				log.Log.Info(fmt.Sprintf("node %s has become Ready again", node.Name))
+				idx := slices.Index(status.FailedChecks, fmt.Sprintf("node %s has become NotReady", node.Name))
+				if len(status.FailedChecks) == 1 {
+					status.FailedChecks = nil
+				} else {
+					status.FailedChecks = deleteOCPElementSlice(status.FailedChecks, idx)
+				}
+				if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+					ocphealthcheckutil.SendEmailRecoveredAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", node.Name, "ready"), spec, fmt.Sprintf("node %s which was previously marked as NotReady is now Ready again in cluster %s, please execute <oc get nodes %s > to validate it", node.Name, runningHost, node.Name))
+				}
+				os.Remove(fmt.Sprintf("/home/golanguser/.%s-%s.txt", node.Name, "ready"))
+			}
+		}
+	}
+}
+
+func OnPolicyUpdate(newObj interface{}, spec *ocphealthcheckv1.OcpHealthCheckSpec, status *ocphealthcheckv1.OcpHealthCheckStatus, runningHost string) {
+	policy := new(ocmpolicy.Policy)
+	err := ocphealthcheckutil.ConvertUnStructureToStructured(newObj, policy)
+	if err != nil {
+		log.Log.Error(err, "failed to convert")
+		return
+	}
+	if policy.Status.ComplianceState == "NonCompliant" || policy.Spec.Disabled {
+		if !slices.Contains(status.FailedChecks, fmt.Sprintf("policy %s has become non-compliant in namespace %s", policy.Name, policy.Namespace)) {
+			log.Log.Info(fmt.Sprintf("policy %s has become non-compliant in namespace %s", policy.Name, policy.Namespace))
+			status.FailedChecks = append(status.FailedChecks, fmt.Sprintf("policy %s has become non-compliant in namespace %s", policy.Name, policy.Namespace))
+			if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+				ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", policy.Name, "noncomplaint"), spec, fmt.Sprintf("policy %s is either non-compliant/disabled in namespace %s in cluster %s, please execute <oc get policy %s -n %s -o json | jq .status> to validate it", policy.Name, policy.Namespace, runningHost, policy.Name, policy.Namespace))
+			}
+		}
+	} else {
+		if slices.Contains(status.FailedChecks, fmt.Sprintf("policy %s has become non-compliant in namespace %s", policy.Name, policy.Namespace)) {
+			log.Log.Info(fmt.Sprintf("policy %s has become compliant again in namespace %s", policy.Name, policy.Namespace))
+			idx := slices.Index(status.FailedChecks, fmt.Sprintf("policy %s has become non-compliant in namespace %s", policy.Name, policy.Namespace))
+			if len(status.FailedChecks) == 1 {
+				status.FailedChecks = nil
+			} else {
+				status.FailedChecks = deleteOCPElementSlice(status.FailedChecks, idx)
+			}
+			if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+				ocphealthcheckutil.SendEmailRecoveredAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", policy.Name, "noncomplaint"), spec, fmt.Sprintf("policy %s which was previously non-compliant/disabled is now compliant/enabled again in namespace %s in cluster %s", policy.Name, policy.Namespace, runningHost))
+			}
+			os.Remove(fmt.Sprintf("policy %s has become non-compliant in namespace %s", policy.Name, policy.Namespace))
+		}
+	}
 }

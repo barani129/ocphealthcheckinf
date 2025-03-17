@@ -14,7 +14,16 @@ spec:
     singular: ocphealthcheck
   scope: Cluster
   versions:
-  - name: v1
+  - additionalPrinterColumns:
+    - description: object creation timestamp(in cluster's timezone)
+      jsonPath: .metadata.creationTimestamp
+      name: CreatedAt
+      type: string
+    - description: if set to true, all resource informers are reconciled successfully
+      jsonPath: .status.conditions[].status
+      name: Reconciled
+      type: string
+    name: v1
     schema:
       openAPIV3Schema:
         description: OcpHealthCheck is the Schema for the ocphealthchecks API.
@@ -109,32 +118,11 @@ spec:
                   - type
                   type: object
                 type: array
-              externalNotified:
-                description: Indicates if external alerting system is notified
-                type: boolean
-              externalNotifiedTime:
-                description: Indicates the timestamp when external alerting system
-                  is notified
-                format: date-time
-                type: string
               failedChecks:
                 description: affected targets
                 items:
                   type: string
                 type: array
-              healthy:
-                description: Indicates if openstack cluster is completely error free
-                type: boolean
-              lastRunTime:
-                description: timestamp of last osphealthcheck run, please refer lastSuccessfulRunTime
-                  for successful run time
-                format: date-time
-                type: string
-              lastSuccessfulRunTime:
-                description: last successful timestamp of osphealthchecks, indicates
-                  if the openstack cluster is completely healthy
-                format: date-time
-                type: string
             type: object
         type: object
     served: true
