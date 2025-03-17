@@ -82,7 +82,7 @@ type OcpHealthCheckStatus struct {
 
 	// Indicates if the target is free of failing resources
 	// +optional
-	Healthy *bool `json:"healthy,omitempty"`
+	Healthy bool `json:"healthy,omitempty"`
 }
 
 // +kubebuilder:object:root=true

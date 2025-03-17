@@ -140,8 +140,12 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	defer func() {
-		status.FailedResources = nil
 		status.FailedResources = append(status.FailedResources, status.FailedChecks...)
+		if len(status.FailedResources) > 0 {
+			status.Healthy = true
+		} else {
+			status.Healthy = false
+		}
 		if err != nil {
 			report(ocphealthcheckv1.ConditionFalse, "Trouble running OcpHealthCheckScan", err)
 		}
@@ -214,12 +218,6 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		Resource: "policies",
 	}
 
-	healthcheckResource := schema.GroupVersionResource{
-		Group:    "monitoring.spark.co.nz",
-		Version:  "v1",
-		Resource: "ocphealthchecks",
-	}
-
 	b := false
 	mcpParam := ocphealthcheckutil.MCPStruct{
 		IsMCPInProgress: &b,
@@ -235,16 +233,9 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	podInformer := nsFactory.ForResource(podResource).Informer()
 	nodeInformer := nsFactory.ForResource(nodeResource).Informer()
 	policyInformer := nsFactory.ForResource(policyResource).Informer()
-	healthcheckInformer := nsFactory.ForResource(healthcheckResource).Informer()
 
 	mux := &sync.RWMutex{}
 	synced := false
-
-	healthcheckInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			OnHealthCheckUpdate(oldObj)
-		},
-	})
 	// logic for mcp handling: check if mcp is in progress, if in progress, fetch the node based on labels
 	// mcp.spec.nodeSelector.matchLabels
 	// check if annotation["machineconfiguration.openshift.io/state"] is set to other than Done
@@ -338,7 +329,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// TO DO:
 	// NNCP, CO, Sub
 	log.Log.Info("Waiting for cache sync")
-	isSynced := cache.WaitForCacheSync(context.Background().Done(), podInformer.HasSynced, nodeInformer.HasSynced, mcpInformer.HasSynced, policyInformer.HasSynced, healthcheckInformer.HasSynced)
+	isSynced := cache.WaitForCacheSync(context.Background().Done(), podInformer.HasSynced, nodeInformer.HasSynced, mcpInformer.HasSynced, policyInformer.HasSynced)
 	mux.Lock()
 	synced = isSynced
 	mux.Unlock()
@@ -960,23 +951,4 @@ func OnPodDelete(oldObj interface{}, spec *ocphealthcheckv1.OcpHealthCheckSpec, 
 		}
 	}
 	log.Log.Info(fmt.Sprintf("pod %s has been deleted from namespace %s", po.Name, po.Namespace))
-}
-
-func OnHealthCheckUpdate(oldObj interface{}) {
-	hc := new(ocphealthcheckv1.OcpHealthCheck)
-	err := ocphealthcheckutil.ConvertUnStructureToStructured(oldObj, hc)
-	if err != nil {
-		log.Log.Error(err, "failed to convert")
-		return
-	}
-	if len(hc.Status.FailedChecks) > 0 {
-		hc.Status.FailedResources = nil
-		hc.Status.FailedResources = append(hc.Status.FailedResources, hc.Status.FailedChecks...)
-		b := false
-		hc.Status.Healthy = &b
-	} else {
-		hc.Status.FailedResources = nil
-		a := true
-		hc.Status.Healthy = &a
-	}
 }
