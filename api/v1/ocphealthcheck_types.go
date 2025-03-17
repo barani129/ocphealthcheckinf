@@ -72,26 +72,6 @@ type OcpHealthCheckStatus struct {
 	// +optional
 	Conditions []OcpHealthCheckCondition `json:"conditions,omitempty"`
 
-	// timestamp of last osphealthcheck run, please refer lastSuccessfulRunTime for successful run time
-	// +optional
-	LastRunTime *metav1.Time `json:"lastRunTime,omitempty"`
-
-	// last successful timestamp of osphealthchecks, indicates if the openstack cluster is completely healthy
-	// +optional
-	LastSuccessfulRunTime *metav1.Time `json:"lastSuccessfulRunTime,omitempty"`
-
-	// Indicates if external alerting system is notified
-	// +optional
-	ExternalNotified bool `json:"externalNotified,omitempty"`
-
-	// Indicates if openstack cluster is completely error free
-	// +optional
-	Healthy bool `json:"healthy,omitempty"`
-
-	// Indicates the timestamp when external alerting system is notified
-	// +optional
-	ExternalNotifiedTime *metav1.Time `json:"externalNotifiedTime,omitempty"`
-
 	// affected targets
 	// +optional
 	FailedChecks []string `json:"failedChecks,omitempty"`
@@ -102,6 +82,8 @@ type OcpHealthCheckStatus struct {
 // +kubebuilder:resource:scope=Cluster
 
 // OcpHealthCheck is the Schema for the ocphealthchecks API.
+// +kubebuilder:printcolumn:name="CreatedAt",type="string",JSONPath=".metadata.creationTimestamp",description="object creation timestamp(in cluster's timezone)"
+// +kubebuilder:printcolumn:name="Reconciled",type="string",JSONPath=".status.conditions[].status",description="if set to true, all resource informers are reconciled successfully"
 type OcpHealthCheck struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

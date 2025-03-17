@@ -152,18 +152,6 @@ func (in *OcpHealthCheckStatus) DeepCopyInto(out *OcpHealthCheckStatus) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
-	if in.LastRunTime != nil {
-		in, out := &in.LastRunTime, &out.LastRunTime
-		*out = (*in).DeepCopy()
-	}
-	if in.LastSuccessfulRunTime != nil {
-		in, out := &in.LastSuccessfulRunTime, &out.LastSuccessfulRunTime
-		*out = (*in).DeepCopy()
-	}
-	if in.ExternalNotifiedTime != nil {
-		in, out := &in.ExternalNotifiedTime, &out.ExternalNotifiedTime
-		*out = (*in).DeepCopy()
-	}
 	if in.FailedChecks != nil {
 		in, out := &in.FailedChecks, &out.FailedChecks
 		*out = make([]string, len(*in))
