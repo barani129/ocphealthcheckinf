@@ -23,6 +23,11 @@ spec:
       jsonPath: .status.conditions[].status
       name: Reconciled
       type: string
+    - description: if set to true, all monitored resources in the target cluster are
+        running fine
+      jsonPath: .status.healthy
+      name: Healthy
+      type: string
     name: v1
     schema:
       openAPIV3Schema:
@@ -123,6 +128,14 @@ spec:
                 items:
                   type: string
                 type: array
+              failedResources:
+                description: affected resources
+                items:
+                  type: string
+                type: array
+              healthy:
+                description: Indicates if the target is free of failing resources
+                type: boolean
             type: object
         type: object
     served: true

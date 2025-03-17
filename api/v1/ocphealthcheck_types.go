@@ -75,6 +75,14 @@ type OcpHealthCheckStatus struct {
 	// affected targets
 	// +optional
 	FailedChecks []string `json:"failedChecks,omitempty"`
+
+	// affected resources
+	// +optional
+	FailedResources []string `json:"failedResources,omitempty"`
+
+	// Indicates if the target is free of failing resources
+	// +optional
+	Healthy *bool `json:"healthy,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -84,6 +92,7 @@ type OcpHealthCheckStatus struct {
 // OcpHealthCheck is the Schema for the ocphealthchecks API.
 // +kubebuilder:printcolumn:name="CreatedAt",type="string",JSONPath=".metadata.creationTimestamp",description="object creation timestamp(in cluster's timezone)"
 // +kubebuilder:printcolumn:name="Reconciled",type="string",JSONPath=".status.conditions[].status",description="if set to true, all resource informers are reconciled successfully"
+// +kubebuilder:printcolumn:name="Healthy",type="string",JSONPath=".status.healthy",description="if set to true, all monitored resources in the target cluster are running fine"
 type OcpHealthCheck struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
