@@ -9,7 +9,7 @@ require (
 	github.com/onsi/gomega v1.35.1
 	github.com/openshift/api v0.0.0-20250313134101-8a7efbfb5316
 	k8s.io/api v0.32.1
-	k8s.io/apimachinery v0.32.1
+	k8s.io/apimachinery v0.32.3
 	k8s.io/client-go v0.32.0
 	open-cluster-management.io/governance-policy-propagator v0.15.1-0.20250310184721-a2769fe884e1
 	sigs.k8s.io/controller-runtime v0.20.0
@@ -18,13 +18,14 @@ require (
 require (
 	cel.dev/expr v0.18.0 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect
-	github.com/asaskevich/govalidator v0.0.0-20210307081110-f21760c49a8d // indirect
+	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/emicklei/go-restful/v3 v3.12.0 // indirect
+	github.com/evanphx/json-patch v5.6.0+incompatible // indirect
 	github.com/evanphx/json-patch/v5 v5.9.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect

@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,6 +31,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -241,6 +243,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				log.Log.Info("It is possible that actual MachineConfigPool is in progress/unable to retrieve the APIs")
 				return
 			}
+			CleanUpRunningPods(staticClientSet, spec, status, runningHost)
 		},
 	})
 	log.Log.Info("Adding add pod events to pod informer")
@@ -469,6 +472,32 @@ func OnPodUpdate(newObj interface{}, spec *ocphealthcheckv1.OcpHealthCheckSpec, 
 		log.Log.Error(err, "failed to convert")
 		return
 	}
+	if sameNs, err := IsChildPolicyNamespace(clientset, newPo.Namespace); err != nil {
+		log.Log.Info("unable to retrieve policy object namespace")
+		return
+	} else if sameNs {
+		if !slices.Contains(status.FailedChecks, fmt.Sprintf("cgu update in progress for namespace %s", newPo.Namespace)) {
+			log.Log.Info(fmt.Sprintf("Possible CGU update is in progress, ignore pod changes from namespace %s", newPo.Namespace))
+			status.FailedChecks = append(status.FailedChecks, fmt.Sprintf("cgu update in progress for namespace %s", newPo.Namespace))
+			if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+				ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", "cgu", newPo.Namespace), spec, fmt.Sprintf("possible CGU update is in progress for objects in namespace %s in cluster %s, no pod update alerts will be sent until CGU is compliant, please execute <oc get pods -n %s and oc get policy -A> to validate", newPo.Namespace, runningHost, newPo.Namespace))
+			}
+		}
+		return
+	} else {
+		if slices.Contains(status.FailedChecks, fmt.Sprintf("cgu update in progress for namespace %s", newPo.Namespace)) {
+			log.Log.Info(fmt.Sprintf("Appears that CGU update is completed for objects in namespace %s", newPo.Namespace))
+			idx := slices.Index(status.FailedChecks, fmt.Sprintf("cgu update in progress for namespace %s", newPo.Namespace))
+			if len(status.FailedChecks) == 1 {
+				status.FailedChecks = nil
+			} else {
+				status.FailedChecks = deleteOCPElementSlice(status.FailedChecks, idx)
+			}
+			if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+				ocphealthcheckutil.SendEmailRecoveredAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", "cgu", newPo.Namespace), spec, fmt.Sprintf("Appears that CGU update is completed for objects in namespace %s in cluster %s, pod update alerts will continue to be sent", newPo.Namespace, runningHost))
+			}
+		}
+	}
 	for _, newCont := range newPo.Status.ContainerStatuses {
 		if newCont.State.Terminated != nil && newCont.State.Terminated.ExitCode != 0 {
 			if !slices.Contains(status.FailedChecks, fmt.Sprintf("pod %s's container %s is terminated with non exit code 0 in namespace %s", newPo.Name, newCont.Name, newPo.Namespace)) {
@@ -530,13 +559,30 @@ func OnPodUpdate(newObj interface{}, spec *ocphealthcheckv1.OcpHealthCheckSpec, 
 										ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s-%s.txt", newPo, newCont.Name, newPo.Namespace), spec, fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, volume attachment of volume %s is mounted on a different node in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses and oc get volumeattachments | grep %s > to validate it", newPo.Name, newCont.Name, pvc.Spec.VolumeName, runningHost, newPo, newPo.Namespace, pvc.Spec.VolumeName))
 									}
 								} else {
-									if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
-										ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s-%s.txt", newPo, newCont.Name, newPo.Namespace), spec, fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, volume attachment of volume %s is mounted on the SAME node, issue could be related to image pull in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses and oc get volumeattachments | grep %s > to validate it", newPo.Name, newCont.Name, pvc.Spec.VolumeName, runningHost, newPo, newPo.Namespace, pvc.Spec.VolumeName))
+									// Check if it is due to image pull failure
+									for _, cont := range newPo.Spec.Containers {
+										if cont.Name == newCont.Name {
+											if newCont.Image != cont.Image {
+												if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+													ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s-%s.txt", newPo, newCont.Name, newPo.Namespace), spec, fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, volume attachment of volume %s is mounted on the SAME node, appears to be ErrImagePull error in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses and oc get volumeattachments | grep %s > to validate it", newPo.Name, newCont.Name, pvc.Spec.VolumeName, runningHost, newPo, newPo.Namespace, pvc.Spec.VolumeName))
+												}
+											}
+										}
 									}
 								}
 							} else {
-								if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
-									ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), spec, fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, no persistent volume is attached to the pod, issue could be related to other issues like image pull failure, in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses> to validate it", newPo.Name, newCont.Name, runningHost, newPo.Name, newPo.Namespace))
+								for _, cont := range newPo.Spec.Containers {
+									if cont.Name == newCont.Name {
+										if newCont.Image != cont.Image {
+											if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+												ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s-%s.txt", newPo, newCont.Name, newPo.Namespace), spec, fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, appears to be ErrImagePull error in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses and oc  > to validate it", newPo.Name, newCont.Name, runningHost, newPo, newPo.Namespace))
+											}
+										} else {
+											if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+												ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), spec, fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, no persistent volume is attached to the pod, doesn't seem to be ErrImagePull, could be other issues, in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses> to validate it", newPo.Name, newCont.Name, runningHost, newPo.Name, newPo.Namespace))
+											}
+										}
+									}
 								}
 							}
 						}
@@ -566,6 +612,40 @@ func OnPodUpdate(newObj interface{}, spec *ocphealthcheckv1.OcpHealthCheckSpec, 
 			}
 		}
 	}
+}
+
+func CleanUpRunningPods(clientset *kubernetes.Clientset, spec *ocphealthcheckv1.OcpHealthCheckSpec, status *ocphealthcheckv1.OcpHealthCheckStatus, runningHost string) {
+	if len(status.FailedChecks) > 0 {
+		for _, stat := range status.FailedChecks {
+			if strings.Contains(stat, "pod") {
+				strs := strings.Split(stat, " ")
+				pod, err := clientset.CoreV1().Pods(strs[7]).Get(context.Background(), strs[1], metav1.GetOptions{})
+				if err != nil {
+					log.Log.Info(fmt.Sprintf("unable to retrieve pod %s", strs[1]))
+				}
+				for _, cont := range pod.Status.ContainerStatuses {
+					if cont.State.Running != nil || (cont.State.Terminated != nil && cont.State.Terminated.ExitCode == 0) {
+						if podLastRestartTimerUp(cont.LastTerminationState.Terminated.FinishedAt.String()) {
+							if slices.Contains(status.FailedChecks, fmt.Sprintf("pod %s cont %s crashloopbackoff in namespace %s", pod.Name, cont.Name, pod.Namespace)) {
+								log.Log.Info(fmt.Sprintf("pod %s's container %s is either running/completed in namespace %s", pod.Name, cont.Name, pod.Namespace))
+								idx := slices.Index(status.FailedChecks, fmt.Sprintf("pod %s cont %s crashloopbackoff in namespace %s", pod.Name, cont.Name, pod.Namespace))
+								if len(status.FailedChecks) == 1 {
+									status.FailedChecks = nil
+								} else {
+									status.FailedChecks = deleteOCPElementSlice(status.FailedChecks, idx)
+								}
+								if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+									ocphealthcheckutil.SendEmailRecoveredAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s-%s.txt", pod.Name, cont.Name, pod.Namespace), spec, fmt.Sprintf("pod %s's container %s which was previously terminated with non exit code 0 is now either running/completed in namespace %s in cluster %s ", pod.Name, cont.Name, pod.Namespace, runningHost))
+								}
+								os.Remove(fmt.Sprintf("/home/golanguser/.%s-%s-%s.txt", pod.Name, cont.Name, pod.Namespace))
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 }
 
 func deleteOCPElementSlice(slice []string, index int) []string {
@@ -650,27 +730,121 @@ func OnPolicyUpdate(newObj interface{}, spec *ocphealthcheckv1.OcpHealthCheckSpe
 		log.Log.Error(err, "failed to convert")
 		return
 	}
-	if policy.Status.ComplianceState == "NonCompliant" || policy.Spec.Disabled {
-		if !slices.Contains(status.FailedChecks, fmt.Sprintf("policy %s has become non-compliant in namespace %s", policy.Name, policy.Namespace)) {
-			log.Log.Info(fmt.Sprintf("policy %s has become non-compliant in namespace %s", policy.Name, policy.Namespace))
-			status.FailedChecks = append(status.FailedChecks, fmt.Sprintf("policy %s has become non-compliant in namespace %s", policy.Name, policy.Namespace))
-			if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
-				ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", policy.Name, "noncomplaint"), spec, fmt.Sprintf("policy %s is either non-compliant/disabled in namespace %s in cluster %s, please execute <oc get policy %s -n %s -o json | jq .status> to validate it", policy.Name, policy.Namespace, runningHost, policy.Name, policy.Namespace))
+	if !IsChildPolicy(policy) {
+		if policy.Status.ComplianceState == "NonCompliant" || policy.Spec.Disabled {
+			if !slices.Contains(status.FailedChecks, fmt.Sprintf("policy %s has become non-compliant in namespace %s", policy.Name, policy.Namespace)) {
+				log.Log.Info(fmt.Sprintf("policy %s has become non-compliant in namespace %s", policy.Name, policy.Namespace))
+				status.FailedChecks = append(status.FailedChecks, fmt.Sprintf("policy %s has become non-compliant in namespace %s", policy.Name, policy.Namespace))
+				if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+					ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", policy.Name, "noncomplaint"), spec, fmt.Sprintf("policy %s is either non-compliant/disabled in namespace %s in cluster %s, please execute <oc get policy %s -n %s -o json | jq .status> to validate it", policy.Name, policy.Namespace, runningHost, policy.Name, policy.Namespace))
+				}
+			}
+		} else {
+			if slices.Contains(status.FailedChecks, fmt.Sprintf("policy %s has become non-compliant in namespace %s", policy.Name, policy.Namespace)) {
+				log.Log.Info(fmt.Sprintf("policy %s has become compliant again in namespace %s", policy.Name, policy.Namespace))
+				idx := slices.Index(status.FailedChecks, fmt.Sprintf("policy %s has become non-compliant in namespace %s", policy.Name, policy.Namespace))
+				if len(status.FailedChecks) == 1 {
+					status.FailedChecks = nil
+				} else {
+					status.FailedChecks = deleteOCPElementSlice(status.FailedChecks, idx)
+				}
+				if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+					ocphealthcheckutil.SendEmailRecoveredAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", policy.Name, "noncomplaint"), spec, fmt.Sprintf("policy %s which was previously non-compliant/disabled is now compliant/enabled again in namespace %s in cluster %s", policy.Name, policy.Namespace, runningHost))
+				}
+				os.Remove(fmt.Sprintf("policy %s has become non-compliant in namespace %s", policy.Name, policy.Namespace))
 			}
 		}
+	}
+}
+
+func IsChildPolicy(policy *ocmpolicy.Policy) bool {
+	for labelName, _ := range policy.Labels {
+		if labelName == "openshift-cluster-group-upgrades/parentPolicyName" {
+			return true
+		}
+	}
+	return false
+}
+
+func IsChildPolicyNamespace(clientset *kubernetes.Clientset, ns string) (bool, error) {
+	policyNamespace, err := GetChildPolicyObjectNamespace(clientset)
+	if err != nil {
+		return false, err
+	}
+	if policyNamespace != "" && policyNamespace == ns {
+		return true, nil
+	}
+	return false, nil
+}
+
+func GetChildPolicyObjectNamespace(clientset *kubernetes.Clientset) (string, error) {
+	policies := ocmpolicy.PolicyList{}
+	err := clientset.RESTClient().Get().AbsPath("/apis/policy.open-cluster-management.io/v1/policies").Do(context.Background()).Into(&policies)
+	if err != nil {
+		return "", err
+	}
+	if len(policies.Items) > 0 {
+		for _, policy := range policies.Items {
+			if IsChildPolicy(&policy) {
+				if policy.Name == "ztp-cwl.storage-netapp-trident" {
+					for _, temp := range policy.Spec.PolicyTemplates {
+						obj, _, err := unstructured.UnstructuredJSONScheme.Decode(temp.ObjectDefinition.Raw, nil, nil)
+						if err != nil {
+							return "", err
+						}
+
+						unObj, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
+						if err != nil {
+							return "", err
+						}
+						var objNamespace string
+						for _, val := range unObj {
+							if v2, ok := val.(map[string]interface{}); ok {
+								for k3, v3 := range v2 {
+									if k3 == "object-templates" {
+										for _, v4 := range v3.([]interface{}) {
+											if v5, ok := v4.(map[string]interface{}); ok {
+												for k6, v6 := range v5 {
+													if k6 == "objectDefinition" {
+														for k7, v7 := range v6.(map[string]interface{}) {
+															if k7 == "metadata" {
+																for k8, v8 := range v7.(map[string]interface{}) {
+																	if k8 == "namespace" {
+																		if v8.(string) != "" {
+																			objNamespace = v8.(string)
+																			return objNamespace, nil
+																		}
+																	}
+																}
+															}
+														}
+													}
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+
+			}
+		}
+	}
+	return "", nil
+}
+
+func OnPolicyAdd(newObj interface{}, spec *ocphealthcheckv1.OcpHealthCheckSpec, status *ocphealthcheckv1.OcpHealthCheckStatus, runningHost string) {
+	policy := new(ocmpolicy.Policy)
+	err := ocphealthcheckutil.ConvertUnStructureToStructured(newObj, policy)
+	if err != nil {
+		log.Log.Error(err, "failed to convert")
+		return
+	}
+	if !IsChildPolicy(policy) {
+		log.Log.Info(fmt.Sprintf("New policy.open-cluster-management.io/v1 %s has been added to namespace %s", policy.Name, policy.Namespace))
 	} else {
-		if slices.Contains(status.FailedChecks, fmt.Sprintf("policy %s has become non-compliant in namespace %s", policy.Name, policy.Namespace)) {
-			log.Log.Info(fmt.Sprintf("policy %s has become compliant again in namespace %s", policy.Name, policy.Namespace))
-			idx := slices.Index(status.FailedChecks, fmt.Sprintf("policy %s has become non-compliant in namespace %s", policy.Name, policy.Namespace))
-			if len(status.FailedChecks) == 1 {
-				status.FailedChecks = nil
-			} else {
-				status.FailedChecks = deleteOCPElementSlice(status.FailedChecks, idx)
-			}
-			if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
-				ocphealthcheckutil.SendEmailRecoveredAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", policy.Name, "noncomplaint"), spec, fmt.Sprintf("policy %s which was previously non-compliant/disabled is now compliant/enabled again in namespace %s in cluster %s", policy.Name, policy.Namespace, runningHost))
-			}
-			os.Remove(fmt.Sprintf("policy %s has become non-compliant in namespace %s", policy.Name, policy.Namespace))
-		}
+		log.Log.Info(fmt.Sprintf("New child policy %s has been added to namespace %s, possible CGU update is in progress, please check HUB cluster", policy.Name, policy.Namespace))
 	}
 }
