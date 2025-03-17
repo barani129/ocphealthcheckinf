@@ -316,16 +316,6 @@ func OnPodAdd(oldObj interface{}) {
 	log.Log.Info(fmt.Sprintf("pod %s has been added to namespace %s", po.Name, po.Namespace))
 }
 
-func OnPodDelete(oldObj interface{}) {
-	po := new(corev1.Pod)
-	err := ConvertUnStructureToStructured(oldObj, po)
-	if err != nil {
-		log.Log.Error(err, "failed to convert")
-		return
-	}
-	log.Log.Info(fmt.Sprintf("pod %s has been deleted from namespace %s", po.Name, po.Namespace))
-}
-
 func PvHasDifferentNode(clientset *kubernetes.Clientset, pv string, podNode string) (bool, error) {
 	volAttList, err := clientset.StorageV1().VolumeAttachments().List(context.Background(), metav1.ListOptions{})
 	if err != nil {

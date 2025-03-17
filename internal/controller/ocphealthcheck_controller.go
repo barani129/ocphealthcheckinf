@@ -113,6 +113,10 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
+	if len(status.FailedResources) > 0 {
+		status.FailedChecks = append(status.FailedChecks, status.FailedResources...)
+	}
+
 	// switch ocpScan.(type) {
 	// case *ocphealthcheckv1.OcpHealthCheck:
 	// 	// do nothing
@@ -136,6 +140,8 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	defer func() {
+		status.FailedResources = nil
+		status.FailedResources = append(status.FailedResources, status.FailedChecks...)
 		if err != nil {
 			report(ocphealthcheckv1.ConditionFalse, "Trouble running OcpHealthCheckScan", err)
 		}
@@ -208,6 +214,12 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		Resource: "policies",
 	}
 
+	healthcheckResource := schema.GroupVersionResource{
+		Group:    "monitoring.spark.co.nz",
+		Version:  "v1",
+		Resource: "ocphealthchecks",
+	}
+
 	b := false
 	mcpParam := ocphealthcheckutil.MCPStruct{
 		IsMCPInProgress: &b,
@@ -223,10 +235,16 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	podInformer := nsFactory.ForResource(podResource).Informer()
 	nodeInformer := nsFactory.ForResource(nodeResource).Informer()
 	policyInformer := nsFactory.ForResource(policyResource).Informer()
+	healthcheckInformer := nsFactory.ForResource(healthcheckResource).Informer()
 
 	mux := &sync.RWMutex{}
 	synced := false
 
+	healthcheckInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			OnHealthCheckUpdate(oldObj)
+		},
+	})
 	// logic for mcp handling: check if mcp is in progress, if in progress, fetch the node based on labels
 	// mcp.spec.nodeSelector.matchLabels
 	// check if annotation["machineconfiguration.openshift.io/state"] is set to other than Done
@@ -272,7 +290,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if !synced {
 				return
 			}
-			ocphealthcheckutil.OnPodDelete(obj)
+			OnPodDelete(obj, spec, status, runningHost)
 		},
 	})
 	nodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -288,6 +306,14 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		},
 	})
 	policyInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			mux.RLock()
+			defer mux.RUnlock()
+			if !synced {
+				return
+			}
+			OnPolicyAdd(obj, spec, status)
+		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			mux.RLock()
 			defer mux.RUnlock()
@@ -298,13 +324,21 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				OnPolicyUpdate(newObj, spec, status, runningHost)
 			}
 		},
+		DeleteFunc: func(obj interface{}) {
+			mux.RLock()
+			defer mux.RUnlock()
+			if !synced {
+				return
+			}
+			OnPolicyDelete(obj, spec, status, runningHost)
+		},
 	})
 	// go podInformer.Run(context.Background().Done())
 	nsFactory.Start(context.Background().Done())
 	// TO DO:
 	// NNCP, CO, Sub
 	log.Log.Info("Waiting for cache sync")
-	isSynced := cache.WaitForCacheSync(context.Background().Done(), podInformer.HasSynced, nodeInformer.HasSynced, mcpInformer.HasSynced, policyInformer.HasSynced)
+	isSynced := cache.WaitForCacheSync(context.Background().Done(), podInformer.HasSynced, nodeInformer.HasSynced, mcpInformer.HasSynced, policyInformer.HasSynced, healthcheckInformer.HasSynced)
 	mux.Lock()
 	synced = isSynced
 	mux.Unlock()
@@ -500,9 +534,9 @@ func OnPodUpdate(newObj interface{}, spec *ocphealthcheckv1.OcpHealthCheckSpec, 
 	}
 	for _, newCont := range newPo.Status.ContainerStatuses {
 		if newCont.State.Terminated != nil && newCont.State.Terminated.ExitCode != 0 {
-			if !slices.Contains(status.FailedChecks, fmt.Sprintf("pod %s's container %s is terminated with non exit code 0 in namespace %s", newPo.Name, newCont.Name, newPo.Namespace)) {
+			if !slices.Contains(status.FailedChecks, fmt.Sprintf("pod %s container %s is terminated with non exit code 0 in namespace %s", newPo.Name, newCont.Name, newPo.Namespace)) {
 				log.Log.Info(fmt.Sprintf("pod %s's container %s is terminated with non exit code 0 in namespace %s", newPo.Name, newCont.Name, newPo.Namespace))
-				status.FailedChecks = append(status.FailedChecks, fmt.Sprintf("pod %s's container %s is terminated with non exit code 0 in namespace %s", newPo.Name, newCont.Name, newPo.Namespace))
+				status.FailedChecks = append(status.FailedChecks, fmt.Sprintf("pod %s container %s is terminated with non exit code 0 in namespace %s", newPo.Name, newCont.Name, newPo.Namespace))
 				if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
 					ocphealthcheckutil.SendEmailAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), spec, fmt.Sprintf("pod %s's container %s is terminated with non exit code 0 in namespace %s in cluster %s", newPo.Name, newCont.Name, newPo.Namespace, runningHost))
 				}
@@ -512,9 +546,9 @@ func OnPodUpdate(newObj interface{}, spec *ocphealthcheckv1.OcpHealthCheckSpec, 
 			if newCont.RestartCount > 0 {
 				if newCont.LastTerminationState.Terminated != nil && newCont.LastTerminationState.Terminated.ExitCode != 0 && newCont.LastTerminationState.Terminated.FinishedAt.String() != "" {
 					if podLastRestartTimerUp(newCont.LastTerminationState.Terminated.FinishedAt.String()) {
-						if slices.Contains(status.FailedChecks, fmt.Sprintf("pod %s's container %s is terminated with non exit code 0 in namespace %s", newPo.Name, newCont.Name, newPo.Namespace)) {
+						if slices.Contains(status.FailedChecks, fmt.Sprintf("pod %s container %s is terminated with non exit code 0 in namespace %s", newPo.Name, newCont.Name, newPo.Namespace)) {
 							log.Log.Info(fmt.Sprintf("pod %s's container %s is either running/completed in namespace %s", newPo.Name, newCont.Name, newPo.Namespace))
-							idx := slices.Index(status.FailedChecks, fmt.Sprintf("pod %s's container %s is terminated with non exit code 0 in namespace %s", newPo.Name, newCont.Name, newPo.Namespace))
+							idx := slices.Index(status.FailedChecks, fmt.Sprintf("pod %s container %s is terminated with non exit code 0 in namespace %s", newPo.Name, newCont.Name, newPo.Namespace))
 							if len(status.FailedChecks) == 1 {
 								status.FailedChecks = nil
 							} else {
@@ -619,33 +653,59 @@ func CleanUpRunningPods(clientset *kubernetes.Clientset, spec *ocphealthcheckv1.
 		for _, stat := range status.FailedChecks {
 			if strings.Contains(stat, "pod") {
 				strs := strings.Split(stat, " ")
-				pod, err := clientset.CoreV1().Pods(strs[7]).Get(context.Background(), strs[1], metav1.GetOptions{})
-				if err != nil {
-					log.Log.Info(fmt.Sprintf("unable to retrieve pod %s", strs[1]))
-				}
-				for _, cont := range pod.Status.ContainerStatuses {
-					if cont.State.Running != nil || (cont.State.Terminated != nil && cont.State.Terminated.ExitCode == 0) {
-						if podLastRestartTimerUp(cont.LastTerminationState.Terminated.FinishedAt.String()) {
-							if slices.Contains(status.FailedChecks, fmt.Sprintf("pod %s cont %s crashloopbackoff in namespace %s", pod.Name, cont.Name, pod.Namespace)) {
-								log.Log.Info(fmt.Sprintf("pod %s's container %s is either running/completed in namespace %s", pod.Name, cont.Name, pod.Namespace))
-								idx := slices.Index(status.FailedChecks, fmt.Sprintf("pod %s cont %s crashloopbackoff in namespace %s", pod.Name, cont.Name, pod.Namespace))
-								if len(status.FailedChecks) == 1 {
-									status.FailedChecks = nil
-								} else {
-									status.FailedChecks = deleteOCPElementSlice(status.FailedChecks, idx)
+				if strings.Contains(stat, "terminated") {
+					pod, err := clientset.CoreV1().Pods(strs[13]).Get(context.Background(), strs[1], metav1.GetOptions{})
+					if err != nil {
+						log.Log.Info(fmt.Sprintf("unable to retrieve pod %s", strs[1]))
+					}
+					for _, cont := range pod.Status.ContainerStatuses {
+						if cont.State.Running != nil || (cont.State.Terminated != nil && cont.State.Terminated.ExitCode == 0) {
+							if podLastRestartTimerUp(cont.LastTerminationState.Terminated.FinishedAt.String()) {
+								if slices.Contains(status.FailedChecks, fmt.Sprintf("pod %s container %s is terminated with non exit code 0 in namespace %s", pod.Name, cont.Name, pod.Namespace)) {
+									log.Log.Info(fmt.Sprintf("pod %s's container %s is either running/completed in namespace %s", pod.Name, cont.Name, pod.Namespace))
+									idx := slices.Index(status.FailedChecks, fmt.Sprintf("pod %s container %s is terminated with non exit code 0 in namespace %s", pod.Name, cont.Name, pod.Namespace))
+									if len(status.FailedChecks) == 1 {
+										status.FailedChecks = nil
+									} else {
+										status.FailedChecks = deleteOCPElementSlice(status.FailedChecks, idx)
+									}
+									if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+										ocphealthcheckutil.SendEmailRecoveredAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s-%s.txt", pod.Name, cont.Name, pod.Namespace), spec, fmt.Sprintf("pod %s's container %s which was previously terminated with non exit code 0 is now either running/completed in namespace %s in cluster %s ", pod.Name, cont.Name, pod.Namespace, runningHost))
+									}
+									os.Remove(fmt.Sprintf("/home/golanguser/.%s-%s-%s.txt", pod.Name, cont.Name, pod.Namespace))
 								}
-								if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
-									ocphealthcheckutil.SendEmailRecoveredAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s-%s.txt", pod.Name, cont.Name, pod.Namespace), spec, fmt.Sprintf("pod %s's container %s which was previously terminated with non exit code 0 is now either running/completed in namespace %s in cluster %s ", pod.Name, cont.Name, pod.Namespace, runningHost))
+							}
+						}
+					}
+				} else {
+					pod, err := clientset.CoreV1().Pods(strs[7]).Get(context.Background(), strs[1], metav1.GetOptions{})
+					if err != nil {
+						log.Log.Info(fmt.Sprintf("unable to retrieve pod %s", strs[1]))
+					}
+					for _, cont := range pod.Status.ContainerStatuses {
+						if cont.State.Running != nil || (cont.State.Terminated != nil && cont.State.Terminated.ExitCode == 0) {
+							if podLastRestartTimerUp(cont.LastTerminationState.Terminated.FinishedAt.String()) {
+								if slices.Contains(status.FailedChecks, fmt.Sprintf("pod %s cont %s crashloopbackoff in namespace %s", pod.Name, cont.Name, pod.Namespace)) {
+									log.Log.Info(fmt.Sprintf("pod %s's container %s is either running/completed in namespace %s", pod.Name, cont.Name, pod.Namespace))
+									idx := slices.Index(status.FailedChecks, fmt.Sprintf("pod %s cont %s crashloopbackoff in namespace %s", pod.Name, cont.Name, pod.Namespace))
+									if len(status.FailedChecks) == 1 {
+										status.FailedChecks = nil
+									} else {
+										status.FailedChecks = deleteOCPElementSlice(status.FailedChecks, idx)
+									}
+									if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+										ocphealthcheckutil.SendEmailRecoveredAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s-%s.txt", pod.Name, cont.Name, pod.Namespace), spec, fmt.Sprintf("pod %s's container %s which was previously terminated with non exit code 0 is now either running/completed in namespace %s in cluster %s ", pod.Name, cont.Name, pod.Namespace, runningHost))
+									}
+									os.Remove(fmt.Sprintf("/home/golanguser/.%s-%s-%s.txt", pod.Name, cont.Name, pod.Namespace))
 								}
-								os.Remove(fmt.Sprintf("/home/golanguser/.%s-%s-%s.txt", pod.Name, cont.Name, pod.Namespace))
 							}
 						}
 					}
 				}
+
 			}
 		}
 	}
-
 }
 
 func deleteOCPElementSlice(slice []string, index int) []string {
@@ -757,6 +817,28 @@ func OnPolicyUpdate(newObj interface{}, spec *ocphealthcheckv1.OcpHealthCheckSpe
 	}
 }
 
+func OnPolicyDelete(oldObj interface{}, spec *ocphealthcheckv1.OcpHealthCheckSpec, status *ocphealthcheckv1.OcpHealthCheckStatus, runningHost string) {
+	policy := new(ocmpolicy.Policy)
+	err := ocphealthcheckutil.ConvertUnStructureToStructured(oldObj, policy)
+	if err != nil {
+		log.Log.Error(err, "failed to convert")
+		return
+	}
+	if slices.Contains(status.FailedChecks, fmt.Sprintf("policy %s has become non-compliant in namespace %s", policy.Name, policy.Namespace)) {
+		log.Log.Info(fmt.Sprintf("policy %s has become compliant again in namespace %s", policy.Name, policy.Namespace))
+		idx := slices.Index(status.FailedChecks, fmt.Sprintf("policy %s has become non-compliant in namespace %s", policy.Name, policy.Namespace))
+		if len(status.FailedChecks) == 1 {
+			status.FailedChecks = nil
+		} else {
+			status.FailedChecks = deleteOCPElementSlice(status.FailedChecks, idx)
+		}
+		if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+			ocphealthcheckutil.SendEmailRecoveredAlert(runningHost, fmt.Sprintf("/home/golanguser/.%s-%s.txt", policy.Name, "noncomplaint"), spec, fmt.Sprintf("policy %s which was previously non-compliant/disabled is now deleted in namespace %s in cluster %s", policy.Name, policy.Namespace, runningHost))
+		}
+		os.Remove(fmt.Sprintf("policy %s has become non-compliant in namespace %s", policy.Name, policy.Namespace))
+	}
+}
+
 func IsChildPolicy(policy *ocmpolicy.Policy) bool {
 	for labelName, _ := range policy.Labels {
 		if labelName == "openshift-cluster-group-upgrades/parentPolicyName" {
@@ -835,7 +917,7 @@ func GetChildPolicyObjectNamespace(clientset *kubernetes.Clientset) (string, err
 	return "", nil
 }
 
-func OnPolicyAdd(newObj interface{}, spec *ocphealthcheckv1.OcpHealthCheckSpec, status *ocphealthcheckv1.OcpHealthCheckStatus, runningHost string) {
+func OnPolicyAdd(newObj interface{}, spec *ocphealthcheckv1.OcpHealthCheckSpec, status *ocphealthcheckv1.OcpHealthCheckStatus) {
 	policy := new(ocmpolicy.Policy)
 	err := ocphealthcheckutil.ConvertUnStructureToStructured(newObj, policy)
 	if err != nil {
@@ -846,5 +928,55 @@ func OnPolicyAdd(newObj interface{}, spec *ocphealthcheckv1.OcpHealthCheckSpec, 
 		log.Log.Info(fmt.Sprintf("New policy.open-cluster-management.io/v1 %s has been added to namespace %s", policy.Name, policy.Namespace))
 	} else {
 		log.Log.Info(fmt.Sprintf("New child policy %s has been added to namespace %s, possible CGU update is in progress, please check HUB cluster", policy.Name, policy.Namespace))
+	}
+}
+
+func OnPodDelete(oldObj interface{}, spec *ocphealthcheckv1.OcpHealthCheckSpec, status *ocphealthcheckv1.OcpHealthCheckStatus, runningHost string) {
+	po := new(corev1.Pod)
+	err := ocphealthcheckutil.ConvertUnStructureToStructured(oldObj, po)
+	if err != nil {
+		log.Log.Error(err, "failed to convert")
+		return
+	}
+	if len(status.FailedChecks) > 0 {
+		for _, stat := range status.FailedChecks {
+			for _, newCont := range po.Status.ContainerStatuses {
+				if strings.Contains(stat, fmt.Sprintf("pod %s container %s is terminated with non exit code 0 in namespace %s", po.Name, newCont.Name, po.Namespace)) {
+					idx := slices.Index(status.FailedChecks, fmt.Sprintf("pod %s container %s is terminated with non exit code 0 in namespace %s", po.Name, newCont.Name, po.Namespace))
+					if len(status.FailedChecks) == 1 {
+						status.FailedChecks = nil
+					} else {
+						status.FailedChecks = deleteOCPElementSlice(status.FailedChecks, idx)
+					}
+				} else if strings.Contains(stat, fmt.Sprintf("pod %s cont %s crashloopbackoff in namespace %s", po.Name, newCont.Name, po.Namespace)) {
+					idx := slices.Index(status.FailedChecks, fmt.Sprintf("pod %s cont %s crashloopbackoff in namespace %s", po.Name, newCont.Name, po.Namespace))
+					if len(status.FailedChecks) == 1 {
+						status.FailedChecks = nil
+					} else {
+						status.FailedChecks = deleteOCPElementSlice(status.FailedChecks, idx)
+					}
+				}
+			}
+		}
+	}
+	log.Log.Info(fmt.Sprintf("pod %s has been deleted from namespace %s", po.Name, po.Namespace))
+}
+
+func OnHealthCheckUpdate(oldObj interface{}) {
+	hc := new(ocphealthcheckv1.OcpHealthCheck)
+	err := ocphealthcheckutil.ConvertUnStructureToStructured(oldObj, hc)
+	if err != nil {
+		log.Log.Error(err, "failed to convert")
+		return
+	}
+	if len(hc.Status.FailedChecks) > 0 {
+		hc.Status.FailedResources = nil
+		hc.Status.FailedResources = append(hc.Status.FailedResources, hc.Status.FailedChecks...)
+		b := false
+		hc.Status.Healthy = &b
+	} else {
+		hc.Status.FailedResources = nil
+		a := true
+		hc.Status.Healthy = &a
 	}
 }
