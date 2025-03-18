@@ -41,6 +41,7 @@ RUN addgroup -S golanggroup && adduser -S golanguser -u 65532 -G golanguser
 RUN chmod 777 /home/golanguser
 WORKDIR /home/golanguser
 COPY --from=builder /home/golanguser/manager .
+RUN mkdir /home/golanguser/files && chown golanguser:golanguser /home/golanguser/files
 USER 65532:65532
 
 ENTRYPOINT ["/home/golanguser/manager"]
