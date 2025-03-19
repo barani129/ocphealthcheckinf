@@ -9,7 +9,6 @@ import (
 	"regexp"
 
 	ocpscanv1 "github.com/barani129/ocphealthcheckinf/api/v1"
-	corev1 "k8s.io/api/core/v1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -305,16 +304,6 @@ func ConvertUnStructureToStructured(oldObj interface{}, k8sobj interface{}) erro
 	return nil
 }
 
-func OnPodAdd(oldObj interface{}) {
-	po := new(corev1.Pod)
-	err := ConvertUnStructureToStructured(oldObj, po)
-	if err != nil {
-		log.Log.Error(err, "failed to convert")
-		return
-	}
-	log.Log.Info(fmt.Sprintf("pod %s has been added to namespace %s", po.Name, po.Namespace))
-}
-
 func PvHasDifferentNode(clientset *kubernetes.Clientset, pv string, podNode string) (bool, error) {
 	volAttList, err := clientset.StorageV1().VolumeAttachments().List(context.Background(), metav1.ListOptions{})
 	if err != nil {
@@ -330,4 +319,14 @@ func PvHasDifferentNode(clientset *kubernetes.Clientset, pv string, podNode stri
 		}
 	}
 	return false, nil
+}
+
+func SendEmail(filename string, alertType string, alertString string, runningHost string, spec *ocpscanv1.OcpHealthCheckSpec) {
+	if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+		if alertType == "faulty" {
+			SendEmailAlert(runningHost, filename, spec, alertString)
+		} else {
+			SendEmailRecoveredAlert(runningHost, filename, spec, alertString)
+		}
+	}
 }
