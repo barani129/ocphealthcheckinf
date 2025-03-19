@@ -11,5 +11,5 @@ roleRef:
   name: manager-role
 subjects:
 - kind: ServiceAccount
-  name: ocphealthcheck-manager
+  name: ocphealthcheck
   namespace: shift-stack
