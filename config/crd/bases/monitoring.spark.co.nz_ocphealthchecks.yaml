@@ -123,16 +123,6 @@ spec:
                   - type
                   type: object
                 type: array
-              failedChecks:
-                description: affected targets
-                items:
-                  type: string
-                type: array
-              failedResources:
-                description: affected resources
-                items:
-                  type: string
-                type: array
               healthy:
                 description: Indicates if the target is free of failing resources
                 type: boolean
