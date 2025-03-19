@@ -72,14 +72,6 @@ type OcpHealthCheckStatus struct {
 	// +optional
 	Conditions []OcpHealthCheckCondition `json:"conditions,omitempty"`
 
-	// affected targets
-	// +optional
-	FailedChecks []string `json:"failedChecks,omitempty"`
-
-	// affected resources
-	// +optional
-	FailedResources []string `json:"failedResources,omitempty"`
-
 	// Indicates if the target is free of failing resources
 	// +optional
 	Healthy bool `json:"healthy,omitempty"`

@@ -243,6 +243,7 @@ func main() {
 		RESTClient:               restClient,
 		RESTConfig:               mgr.GetConfig(),
 		ClusterResourceNamespace: clusterResourceNamespace,
+		InformerCount:            int64(1),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "OcpHealthCheck")
 		os.Exit(1)

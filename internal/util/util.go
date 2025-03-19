@@ -151,6 +151,7 @@ func ReadFile(filename string) (string, error) {
 
 func SendEmailAlert(nodeName string, filename string, spec *ocpscanv1.OcpHealthCheckSpec, alert string) {
 	if _, err := os.Stat(filename); os.IsNotExist(err) {
+		log.Log.Info(alert)
 		message := fmt.Sprintf(`/usr/bin/printf '%s\n' "Subject: OcpHealthCheck alert from %s" "" "Alert: %s" | /usr/sbin/sendmail -f %s -S %s %s`, "%s", nodeName, alert, spec.Email, spec.RelayHost, spec.Email)
 		cmd3 := exec.Command("/bin/bash", "-c", message)
 		err := cmd3.Run()
@@ -161,6 +162,7 @@ func SendEmailAlert(nodeName string, filename string, spec *ocpscanv1.OcpHealthC
 	} else {
 		data, _ := ReadFile(filename)
 		if data != "sent" {
+			log.Log.Info(alert)
 			message := fmt.Sprintf(`/usr/bin/printf '%s\n' "Subject: OcpHealthCheck alert from %s" "" "Alert: %s" | /usr/sbin/sendmail -f %s -S %s %s`, "%s", nodeName, alert, spec.Email, spec.RelayHost, spec.Email)
 			cmd3 := exec.Command("/bin/bash", "-c", message)
 			err := cmd3.Run()
@@ -182,12 +184,14 @@ func SendEmailRecoveredAlert(nodeName string, filename string, spec *ocpscanv1.O
 			fmt.Printf("Failed to send the alert: %s", err)
 		}
 		if data == "sent" {
+			log.Log.Info(commandToRun)
 			message := fmt.Sprintf(`/usr/bin/printf '%s\n' "Subject: OcpHealthCheck alert from %s" ""  "Resolved: %s" | /usr/sbin/sendmail -f %s -S %s %s`, "%s", nodeName, commandToRun, spec.Email, spec.RelayHost, spec.Email)
 			cmd3 := exec.Command("/bin/bash", "-c", message)
 			err := cmd3.Run()
 			if err != nil {
 				fmt.Printf("Failed to send the alert: %s", err)
 			}
+			os.Remove(filename)
 		}
 	}
 }
@@ -245,52 +249,47 @@ func DisableMCP(mcp *MCPStruct) {
 	}
 }
 
-func CheckNodeReadiness(clientset *kubernetes.Clientset, nodeLabel map[string]string, mcp *MCPStruct) error {
+func CheckNodeReadiness(clientset *kubernetes.Clientset, nodeLabel map[string]string) (bool, string, error) {
 	nodeList, err := clientset.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{
 		LabelSelector: labels.Set(nodeLabel).String(),
 	})
 	if err != nil {
-		return err
+		return false, "", err
 	}
 
 	if len(nodeList.Items) > 0 {
 		for _, node := range nodeList.Items {
 			if node.Spec.Unschedulable {
-				EnableMCP(mcp, node.Name, "unschedulable")
-				return nil
+				return true, node.Name, nil
 			}
 			for _, cond := range node.Status.Conditions {
 				if cond.Type == "Ready" && cond.Status == "False" {
-					EnableMCP(mcp, node.Name, "NotReady")
-					return nil
+					return true, node.Name, nil
 				}
 			}
 		}
 	}
-	return nil
+	return false, "", nil
 }
 
-func CheckNodeMcpAnnotations(clientset *kubernetes.Clientset, nodeLabel map[string]string, mcp *MCPStruct) error {
+func CheckNodeMcpAnnotations(clientset *kubernetes.Clientset, nodeLabel map[string]string) (bool, string, error) {
 	nodeList, err := clientset.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{
 		LabelSelector: labels.Set(nodeLabel).String(),
 	})
 	if err != nil {
-		return err
+		return false, "", err
 	}
 	for _, node := range nodeList.Items {
 		for anno, val := range node.Annotations {
 			// to be updated
 			if anno == "machineconfiguration.openshift.io/state" {
 				if val != MACHINECONFIGUPDATEDONE {
-					EnableMCPAnno(mcp, node.Name, val)
-					return nil
-				} else {
-					DisableMCPAnno(mcp)
+					return true, node.Name, nil
 				}
 			}
 		}
 	}
-	return nil
+	return false, "", nil
 }
 
 func ConvertUnStructureToStructured(oldObj interface{}, k8sobj interface{}) error {
