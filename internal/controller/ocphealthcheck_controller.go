@@ -243,7 +243,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		MCPAnnoState:    "",
 		MCPNodeState:    "",
 	}
-	nsFactory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(clientset, time.Second*15, corev1.NamespaceAll, nil)
+	nsFactory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(clientset, time.Minute*10, corev1.NamespaceAll, nil)
 	mcpInformer := nsFactory.ForResource(mcpResource).Informer()
 	podInformer := nsFactory.ForResource(podResource).Informer()
 	nodeInformer := nsFactory.ForResource(nodeResource).Informer()
@@ -286,9 +286,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if !synced {
 				return
 			}
-			if mcpParam.IsMCPInProgress != nil && !*mcpParam.IsMCPInProgress {
-				OnPodUpdate(newObj, spec, status, runningHost, staticClientSet)
-			}
+			OnPodUpdate(newObj, spec, status, runningHost, staticClientSet)
 		},
 		DeleteFunc: func(obj interface{}) {
 			mux.RLock()
@@ -306,9 +304,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if !synced {
 				return
 			}
-			if mcpParam.IsMCPInProgress != nil && !*mcpParam.IsMCPInProgress {
-				OnNodeUpdate(newObj, spec, status, runningHost, &mcpParam)
-			}
+			OnNodeUpdate(newObj, spec, status, runningHost, &mcpParam)
 		},
 	})
 	policyInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -326,9 +322,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if !synced {
 				return
 			}
-			if mcpParam.IsMCPInProgress != nil && !*mcpParam.IsMCPInProgress {
-				OnPolicyUpdate(newObj, spec, status, runningHost)
-			}
+			OnPolicyUpdate(newObj, spec, status, runningHost)
 		},
 		DeleteFunc: func(obj interface{}) {
 			mux.RLock()
@@ -341,34 +335,54 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	})
 	coInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		UpdateFunc: func(oldObj, newObj interface{}) {
+			mux.RLock()
+			defer mux.RUnlock()
+			if !synced {
+				return
+			}
 			OnCoUpdate(newObj, staticClientSet, spec, runningHost)
 		},
 	})
 	catalogInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		UpdateFunc: func(oldObj, newObj interface{}) {
+			mux.RLock()
+			defer mux.RUnlock()
+			if !synced {
+				return
+			}
 			OnCatalogSourceUpdate(newObj, staticClientSet, spec, runningHost)
 		},
 	})
 	nncpInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		UpdateFunc: func(oldObj, newObj interface{}) {
+			mux.RLock()
+			defer mux.RUnlock()
+			if !synced {
+				return
+			}
 			OnNNCPUpdate(newObj, staticClientSet, spec, runningHost)
 		},
 	})
 	csvInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		UpdateFunc: func(oldObj, newObj interface{}) {
+			mux.RLock()
+			defer mux.RUnlock()
+			if !synced {
+				return
+			}
 			OnCsvUpdate(newObj, staticClientSet, spec, runningHost)
 		},
 	})
 	// go podInformer.Run(context.Background().Done())
 	if r.InformerCount < 2 {
 		log.Log.Info("Starting dynamic informer factory")
-		nsFactory.Start(context.Background().Done())
+		nsFactory.Start(ctx.Done())
 		r.InformerCount++
 	}
 	// TO DO:
 	// NNCP, CO, Sub, catalogsource
 	log.Log.Info("Waiting for cache sync")
-	isSynced := cache.WaitForCacheSync(context.Background().Done(), podInformer.HasSynced, nodeInformer.HasSynced, mcpInformer.HasSynced, policyInformer.HasSynced, coInformer.HasSynced, nncpInformer.HasSynced, catalogInformer.HasSynced, csvInformer.HasSynced)
+	isSynced := cache.WaitForCacheSync(ctx.Done(), podInformer.HasSynced, nodeInformer.HasSynced, mcpInformer.HasSynced, policyInformer.HasSynced, coInformer.HasSynced, nncpInformer.HasSynced, catalogInformer.HasSynced, csvInformer.HasSynced)
 	mux.Lock()
 	synced = isSynced
 	mux.Unlock()
@@ -377,17 +391,6 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, fmt.Errorf("failed to sync")
 	}
 	report(ocphealthcheckv1.ConditionTrue, "pod informers compiled successfully", nil)
-	go func() {
-		for {
-			if files, err := os.ReadDir("/home/golanguser/files/"); err != nil {
-				if len(files) < 1 {
-					status.Healthy = true
-				} else {
-					status.Healthy = false
-				}
-			}
-		}
-	}()
 	return ctrl.Result{}, nil
 }
 
@@ -577,9 +580,9 @@ func CleanUpRunningPods(clientset *kubernetes.Clientset, spec *ocphealthcheckv1.
 		for _, file := range files {
 			if len(podList.Items) > 0 {
 				for _, pod := range podList.Items {
-					failingContainers := []string{}
-					timersUp := []bool{}
 					if strings.Contains(file.Name(), fmt.Sprintf(".%s-%s.txt", pod.Name, pod.Namespace)) {
+						failingContainers := []string{}
+						timersUp := []bool{}
 						for _, cont := range pod.Status.ContainerStatuses {
 							if cont.State.Running == nil {
 								failingContainers = append(failingContainers, cont.Name)
@@ -594,12 +597,19 @@ func CleanUpRunningPods(clientset *kubernetes.Clientset, spec *ocphealthcheckv1.
 
 							}
 						}
-					}
-					if len(failingContainers) < 1 && len(timersUp) < 1 {
-						SendEmail(fmt.Sprintf("/home/golanguser/files/.%s-%s.txt", pod.Name, pod.Namespace), "recovered", fmt.Sprintf("pod %s which was previously waiting/terminated with non exit code 0 is now either running/completed in namespace %s in cluster %s ", pod.Name, pod.Namespace, runningHost), runningHost, spec)
+						if len(failingContainers) < 1 && len(timersUp) < 1 {
+							SendEmail(fmt.Sprintf("/home/golanguser/files/.%s-%s.txt", pod.Name, pod.Namespace), "recovered", fmt.Sprintf("pod %s which was previously waiting/terminated with non exit code 0 is now either running/completed in namespace %s in cluster %s ", pod.Name, pod.Namespace, runningHost), runningHost, spec)
+						}
 					}
 				}
 			}
+		}
+	}
+	if files, err := os.ReadDir("/home/golanguser/files/"); err != nil {
+		if len(files) < 1 {
+			status.Healthy = true
+		} else {
+			status.Healthy = false
 		}
 	}
 }
@@ -779,7 +789,7 @@ func OnPodDelete(oldObj interface{}, spec *ocphealthcheckv1.OcpHealthCheckSpec, 
 		log.Log.Error(err, "failed to convert")
 		return
 	}
-	SendEmail(fmt.Sprintf("/home/golanguser/files/.%s-%s.txt", po.Name, po.Namespace), "faulty", fmt.Sprintf("pod %s's container which was previously terminated/CrashLoopBackOff is now deleted in namespace %s in cluster %s ", po.Name, po.Namespace, runningHost), runningHost, spec)
+	SendEmail(fmt.Sprintf("/home/golanguser/files/.%s-%s.txt", po.Name, po.Namespace), "recovered", fmt.Sprintf("pod %s's container which was previously terminated/CrashLoopBackOff is now deleted in namespace %s in cluster %s ", po.Name, po.Namespace, runningHost), runningHost, spec)
 }
 
 func SendEmail(filename string, alertType string, alertString string, runningHost string, spec *ocphealthcheckv1.OcpHealthCheckSpec) {
