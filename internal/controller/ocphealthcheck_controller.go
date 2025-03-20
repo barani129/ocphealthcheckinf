@@ -23,13 +23,7 @@ import (
 	"time"
 
 	ocphealthcheckv1 "github.com/barani129/ocphealthcheckinf/api/v1"
-	"github.com/barani129/ocphealthcheckinf/internal/mcputil"
-	"github.com/barani129/ocphealthcheckinf/internal/nodeutil"
-	"github.com/barani129/ocphealthcheckinf/internal/otherutil"
-	podutil "github.com/barani129/ocphealthcheckinf/internal/podutil"
-	"github.com/barani129/ocphealthcheckinf/internal/policyutil"
-	ocphealthcheckutil "github.com/barani129/ocphealthcheckinf/internal/util"
-
+	"github.com/barani129/ocphealthcheckinf/internal/util"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -79,6 +73,9 @@ func (r *OcpHealthCheckReconciler) newOcpHealthChecker() (client.Object, error) 
 // +kubebuilder:rbac:groups="operators.coreos.com",resources=clusterserviceversions,verbs=get;list;watch
 // +kubebuilder:rbac:groups="nmstate.io",resources=nodenetworkconfigurationpolicies,verbs=get;list;watch
 // +kubebuilder:rbac:groups="policy.open-cluster-management.io",resources=policies,verbs=get;list;watch
+// +kubebuilder:rbac:groups="cluster.open-cluster-management.io",resources=managedclusters,verbs=get;list;watch
+// +kubebuilder:rbac:groups="argoproj.io",resources=argocds,verbs=get;list;watch
+// +kubebuilder:rbac:groups="tuned.openshift.io",resources=profiles,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -104,10 +101,21 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		log.Log.Info("OcpHealthCheck is not found")
 		return ctrl.Result{}, nil
 	}
-	spec, status, err := ocphealthcheckutil.GetSpecAndStatus(ocpScan)
+	spec, status, err := util.GetSpecAndStatus(ocpScan)
 	if err != nil {
 		log.Log.Error(err, "unable to retrieve OcpHealthCheck spec and status")
 		return ctrl.Result{}, err
+	}
+
+	if spec.Suspend != nil && *spec.Suspend {
+		log.Log.Info("OcpHealthCheck is suspended, skipping...")
+		return ctrl.Result{RequeueAfter: time.Minute * 30}, nil
+	}
+
+	if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
+		if spec.Email == "" || spec.RelayHost == "" {
+			return ctrl.Result{}, fmt.Errorf("please configure valid email address/relay host in spec")
+		}
 	}
 
 	// switch ocpScan.(type) {
@@ -129,7 +137,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			log.Log.Info(message)
 		}
 		r.recorder.Event(ocpScan, eventType, ocphealthcheckv1.EventReasonIssuerReconciler, message)
-		ocphealthcheckutil.SetReadyCondition(status, conditionStatus, ocphealthcheckv1.EventReasonIssuerReconciler, message)
+		util.SetReadyCondition(status, conditionStatus, ocphealthcheckv1.EventReasonIssuerReconciler, message)
 	}
 
 	defer func() {
@@ -142,7 +150,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}()
 
-	if readyCond := ocphealthcheckutil.GetReadyCondition(status); readyCond == nil {
+	if readyCond := util.GetReadyCondition(status); readyCond == nil {
 		report(ocphealthcheckv1.ConditionUnknown, "First Seen", nil)
 		return ctrl.Result{}, nil
 	}
@@ -163,7 +171,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	var runningHost string
-	domain, err := ocphealthcheckutil.GetAPIName(*staticClientSet)
+	domain, err := util.GetAPIName(*staticClientSet)
 	if err == nil && domain == "" {
 		if spec.Cluster != nil {
 			runningHost = *spec.Cluster
@@ -222,15 +230,24 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		Resource: "clusterserviceversions",
 	}
 
-	b := false
-	mcpParam := ocphealthcheckutil.MCPStruct{
-		IsMCPInProgress: &b,
-		IsNodeAffected:  &b,
-		MCPAnnoNode:     "",
-		MCPNode:         "",
-		MCPAnnoState:    "",
-		MCPNodeState:    "",
+	mcResource := schema.GroupVersionResource{
+		Group:    "cluster.open-cluster-management.io",
+		Version:  "v1",
+		Resource: "managedclusters",
 	}
+
+	argoResource := schema.GroupVersionResource{
+		Group:    "argoproj.io",
+		Version:  "v1beta1",
+		Resource: "argocds",
+	}
+
+	tpResource := schema.GroupVersionResource{
+		Group:    "tuned.openshift.io",
+		Version:  "v1",
+		Resource: "profiles",
+	}
+
 	nsFactory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(clientset, time.Minute*10, corev1.NamespaceAll, nil)
 	mcpInformer := nsFactory.ForResource(mcpResource).Informer()
 	podInformer := nsFactory.ForResource(podResource).Informer()
@@ -240,6 +257,13 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	nncpInformer := nsFactory.ForResource(nncpResource).Informer()
 	catalogInformer := nsFactory.ForResource(catalogResource).Informer()
 	csvInformer := nsFactory.ForResource(csvResource).Informer()
+	tpInformer := nsFactory.ForResource(tpResource).Informer()
+	var mcInformer cache.SharedIndexInformer
+	var argoInformer cache.SharedIndexInformer
+	if spec.HubCluster != nil && *spec.HubCluster {
+		mcInformer = nsFactory.ForResource(mcResource).Informer()
+		argoInformer = nsFactory.ForResource(argoResource).Informer()
+	}
 
 	mux := &sync.RWMutex{}
 	synced := false
@@ -254,8 +278,8 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if !synced {
 				return
 			}
-			mcputil.OnMCPUpdate(newObj, staticClientSet, status, spec, runningHost)
-			podutil.CleanUpRunningPods(staticClientSet, spec, status, runningHost)
+			util.OnMCPUpdate(newObj, staticClientSet, status, spec, runningHost)
+			util.CleanUpRunningPods(staticClientSet, spec, status, runningHost)
 		},
 	})
 	log.Log.Info("Adding add pod events to pod informer")
@@ -266,7 +290,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if !synced {
 				return
 			}
-			podutil.OnPodAdd(oldObj)
+			util.OnPodAdd(oldObj)
 		},
 		UpdateFunc: func(oldObj interface{}, newObj interface{}) {
 			mux.RLock()
@@ -274,7 +298,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if !synced {
 				return
 			}
-			podutil.OnPodUpdate(newObj, spec, status, runningHost, staticClientSet)
+			util.OnPodUpdate(newObj, spec, status, runningHost, staticClientSet)
 		},
 		DeleteFunc: func(obj interface{}) {
 			mux.RLock()
@@ -282,7 +306,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if !synced {
 				return
 			}
-			podutil.OnPodDelete(obj, spec, status, runningHost)
+			util.OnPodDelete(obj, staticClientSet, spec, status, runningHost)
 		},
 	})
 	nodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -292,7 +316,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if !synced {
 				return
 			}
-			nodeutil.OnNodeUpdate(newObj, spec, status, runningHost, &mcpParam)
+			util.OnNodeUpdate(newObj, spec, status, runningHost)
 		},
 	})
 	policyInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -302,7 +326,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if !synced {
 				return
 			}
-			policyutil.OnPolicyAdd(obj, spec, status)
+			util.OnPolicyAdd(obj, spec, status)
 		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			mux.RLock()
@@ -310,7 +334,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if !synced {
 				return
 			}
-			policyutil.OnPolicyUpdate(newObj, spec, status, runningHost)
+			util.OnPolicyUpdate(newObj, staticClientSet, spec, status, runningHost)
 		},
 		DeleteFunc: func(obj interface{}) {
 			mux.RLock()
@@ -318,7 +342,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if !synced {
 				return
 			}
-			policyutil.OnPolicyDelete(obj, spec, status, runningHost)
+			util.OnPolicyDelete(obj, spec, status, runningHost)
 		},
 	})
 	coInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -328,7 +352,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if !synced {
 				return
 			}
-			otherutil.OnCoUpdate(newObj, staticClientSet, spec, runningHost)
+			util.OnCoUpdate(newObj, staticClientSet, spec, runningHost)
 		},
 	})
 	catalogInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -338,7 +362,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if !synced {
 				return
 			}
-			otherutil.OnCatalogSourceUpdate(newObj, staticClientSet, spec, runningHost)
+			util.OnCatalogSourceUpdate(newObj, staticClientSet, spec, runningHost)
 		},
 	})
 	nncpInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -348,7 +372,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if !synced {
 				return
 			}
-			otherutil.OnNNCPUpdate(newObj, staticClientSet, spec, runningHost)
+			util.OnNNCPUpdate(newObj, staticClientSet, spec, runningHost)
 		},
 	})
 	csvInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -358,9 +382,41 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if !synced {
 				return
 			}
-			otherutil.OnCsvUpdate(newObj, staticClientSet, spec, runningHost)
+			util.OnCsvUpdate(newObj, staticClientSet, spec, runningHost)
 		},
 	})
+	tpInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			mux.RLock()
+			defer mux.RUnlock()
+			if !synced {
+				return
+			}
+			util.OnTunedProfileUpdate(newObj, spec, runningHost)
+		},
+	})
+	if spec.HubCluster != nil && *spec.HubCluster {
+		mcInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				mux.RLock()
+				defer mux.RUnlock()
+				if !synced {
+					return
+				}
+				util.OnManagedClusterUpdate(newObj, spec, runningHost)
+			},
+		})
+		argoInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				mux.RLock()
+				defer mux.RUnlock()
+				if !synced {
+					return
+				}
+				util.OnArgoUpdate(newObj, spec, runningHost)
+			},
+		})
+	}
 	// go podInformer.Run(context.Background().Done())
 	if r.InformerCount < 2 {
 		log.Log.Info("Starting dynamic informer factory")
@@ -370,7 +426,12 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// TO DO:
 	// NNCP, CO, Sub, catalogsource
 	log.Log.Info("Waiting for cache sync")
-	isSynced := cache.WaitForCacheSync(ctx.Done(), podInformer.HasSynced, nodeInformer.HasSynced, mcpInformer.HasSynced, policyInformer.HasSynced, coInformer.HasSynced, nncpInformer.HasSynced, catalogInformer.HasSynced, csvInformer.HasSynced)
+	var isSynced bool = false
+	if spec.HubCluster != nil && *spec.HubCluster {
+		isSynced = cache.WaitForCacheSync(ctx.Done(), podInformer.HasSynced, nodeInformer.HasSynced, mcpInformer.HasSynced, policyInformer.HasSynced, coInformer.HasSynced, nncpInformer.HasSynced, catalogInformer.HasSynced, csvInformer.HasSynced, mcInformer.HasSynced, argoInformer.HasSynced, tpInformer.HasSynced)
+	} else {
+		isSynced = cache.WaitForCacheSync(ctx.Done(), podInformer.HasSynced, nodeInformer.HasSynced, mcpInformer.HasSynced, policyInformer.HasSynced, coInformer.HasSynced, nncpInformer.HasSynced, catalogInformer.HasSynced, csvInformer.HasSynced, tpInformer.HasSynced)
+	}
 	mux.Lock()
 	synced = isSynced
 	mux.Unlock()
