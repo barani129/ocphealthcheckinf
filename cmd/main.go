@@ -126,6 +126,10 @@ func main() {
 		tlsOpts = append(tlsOpts, disableHTTP2)
 	}
 
+	if err := CreateDirs(); err != nil {
+		os.Exit(1)
+	}
+
 	// Create watchers for metrics and webhooks certificates
 	var metricsCertWatcher, webhookCertWatcher *certwatcher.CertWatcher
 
@@ -296,4 +300,21 @@ func getInClusterNamespacePath() (string, error) {
 		return "", fmt.Errorf("error reading namespace file: %w", err)
 	}
 	return string(ns), nil
+}
+
+func CreateDirs() error {
+	fmt.Println("Creating sub directories for log files")
+	for _, path := range []string{"container", "port", "ocphealth", "metallb", "vmscan"} {
+		dirName := fmt.Sprintf("/home/golanguser/files/%s", path)
+		if _, err := os.ReadDir(dirName); err != nil {
+			if os.IsNotExist(err) {
+				fmt.Println("Creating sub directories for log files")
+				err := os.Mkdir(dirName, 0775)
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }

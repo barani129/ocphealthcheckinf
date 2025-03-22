@@ -22,11 +22,11 @@ type ArgoCD struct {
 // ArgoCDApplicationControllerProcessorsSpec defines the options for the ArgoCD Application Controller processors.
 type ArgoCDApplicationControllerProcessorsSpec struct {
 	// Operation is the number of application operation processors.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Operation Processor Count'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Controller","urn:alm:descriptor:com.tectonic.ui:number"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Operation Processor Count'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Controller","urn:alm:descriptor:com.tectonic.ui:number"}
 	Operation int32 `json:"operation,omitempty"`
 
 	// Status is the number of application status processors.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Status Processor Count'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Controller","urn:alm:descriptor:com.tectonic.ui:number"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Status Processor Count'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Controller","urn:alm:descriptor:com.tectonic.ui:number"}
 	Status int32 `json:"status,omitempty"`
 }
 
@@ -46,7 +46,7 @@ type ArgoCDApplicationControllerSpec struct {
 	LogFormat string `json:"logFormat,omitempty"`
 
 	// Resources defines the Compute Resources required by the container for the Application Controller.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Resource Requirements'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Controller","urn:alm:descriptor:com.tectonic.ui:resourceRequirements"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Resource Requirements'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Controller","urn:alm:descriptor:com.tectonic.ui:resourceRequirements"}
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 
 	// ParallelismLimit defines the limit for parallel kubectl operations
@@ -109,14 +109,12 @@ type ArgoCDApplicationControllerShardSpec struct {
 	DynamicScalingEnabled *bool `json:"dynamicScalingEnabled,omitempty"`
 
 	// MinShards defines the minimum number of shards at any given point
-	// +kubebuilder:validation:Minimum=1
 	MinShards int32 `json:"minShards,omitempty"`
 
 	// MaxShards defines the maximum number of shards at any given point
 	MaxShards int32 `json:"maxShards,omitempty"`
 
 	// ClustersPerShard defines the maximum number of clusters managed by each argocd shard
-	// +kubebuilder:validation:Minimum=1
 	ClustersPerShard int32 `json:"clustersPerShard,omitempty"`
 }
 
@@ -193,26 +191,26 @@ type ArgoCDCertificateSpec struct {
 // ArgoCDDexSpec defines the desired state for the Dex server component.
 type ArgoCDDexSpec struct {
 	//Config is the dex connector configuration.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Configuration",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Dex","urn:alm:descriptor:com.tectonic.ui:text"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Configuration",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Dex","urn:alm:descriptor:com.tectonic.ui:text"}
 	Config string `json:"config,omitempty"`
 
 	// Optional list of required groups a user must be a member of
 	Groups []string `json:"groups,omitempty"`
 
 	// Image is the Dex container image.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Image",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Dex","urn:alm:descriptor:com.tectonic.ui:text"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Image",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Dex","urn:alm:descriptor:com.tectonic.ui:text"}
 	Image string `json:"image,omitempty"`
 
 	// OpenShiftOAuth enables OpenShift OAuth authentication for the Dex server.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="OpenShift OAuth Enabled'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Dex","urn:alm:descriptor:com.tectonic.ui:booleanSwitch"}
+	//:csv:customresourcedefinitions:type=spec,displayName="OpenShift OAuth Enabled'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Dex","urn:alm:descriptor:com.tectonic.ui:booleanSwitch"}
 	OpenShiftOAuth bool `json:"openShiftOAuth,omitempty"`
 
 	// Resources defines the Compute Resources required by the container for Dex.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Resource Requirements'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Dex","urn:alm:descriptor:com.tectonic.ui:resourceRequirements"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Resource Requirements'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Dex","urn:alm:descriptor:com.tectonic.ui:resourceRequirements"}
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 
 	// Version is the Dex container image tag.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Version",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Dex","urn:alm:descriptor:com.tectonic.ui:text"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Version",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Dex","urn:alm:descriptor:com.tectonic.ui:text"}
 	Version string `json:"version,omitempty"`
 
 	// Env lets you specify environment variables for Dex.
@@ -222,40 +220,40 @@ type ArgoCDDexSpec struct {
 // ArgoCDGrafanaSpec defines the desired state for the Grafana component.
 type ArgoCDGrafanaSpec struct {
 	// Enabled will toggle Grafana support globally for ArgoCD.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Enabled",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Grafana","urn:alm:descriptor:com.tectonic.ui:booleanSwitch"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Enabled",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Grafana","urn:alm:descriptor:com.tectonic.ui:booleanSwitch"}
 	Enabled bool `json:"enabled"`
 
 	// Host is the hostname to use for Ingress/Route resources.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Host",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Grafana","urn:alm:descriptor:com.tectonic.ui:text"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Host",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Grafana","urn:alm:descriptor:com.tectonic.ui:text"}
 	Host string `json:"host,omitempty"`
 
 	// Image is the Grafana container image.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Image",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Grafana","urn:alm:descriptor:com.tectonic.ui:text"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Image",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Grafana","urn:alm:descriptor:com.tectonic.ui:text"}
 	Image string `json:"image,omitempty"`
 
 	// Ingress defines the desired state for an Ingress for the Grafana component.
 	Ingress ArgoCDIngressSpec `json:"ingress,omitempty"`
 
 	// Resources defines the Compute Resources required by the container for Grafana.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Resource Requirements'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Grafana","urn:alm:descriptor:com.tectonic.ui:resourceRequirements"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Resource Requirements'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Grafana","urn:alm:descriptor:com.tectonic.ui:resourceRequirements"}
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 
 	// Route defines the desired state for an OpenShift Route for the Grafana component.
 	Route ArgoCDRouteSpec `json:"route,omitempty"`
 
 	// Size is the replica count for the Grafana Deployment.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Size",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Grafana","urn:alm:descriptor:com.tectonic.ui:podCount"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Size",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Grafana","urn:alm:descriptor:com.tectonic.ui:podCount"}
 	Size *int32 `json:"size,omitempty"`
 
 	// Version is the Grafana container image tag.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Version",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Grafana","urn:alm:descriptor:com.tectonic.ui:text"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Version",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Grafana","urn:alm:descriptor:com.tectonic.ui:text"}
 	Version string `json:"version,omitempty"`
 }
 
 // ArgoCDHASpec defines the desired state for High Availability support for Argo CD.
 type ArgoCDHASpec struct {
 	// Enabled will toggle HA support globally for Argo CD.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Enabled",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:HA","urn:alm:descriptor:com.tectonic.ui:booleanSwitch"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Enabled",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:HA","urn:alm:descriptor:com.tectonic.ui:booleanSwitch"}
 	Enabled bool `json:"enabled"`
 
 	// RedisProxyImage is the Redis HAProxy container image.
@@ -271,11 +269,11 @@ type ArgoCDHASpec struct {
 // ArgoCDImportSpec defines the desired state for the ArgoCD import/restore process.
 type ArgoCDImportSpec struct {
 	// Name of an ArgoCDExport from which to import data.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Name",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Import","urn:alm:descriptor:com.tectonic.ui:text"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Name",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Import","urn:alm:descriptor:com.tectonic.ui:text"}
 	Name string `json:"name"`
 
 	// Namespace for the ArgoCDExport, defaults to the same namespace as the ArgoCD.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Namespace",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Import","urn:alm:descriptor:com.tectonic.ui:text"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Namespace",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Import","urn:alm:descriptor:com.tectonic.ui:text"}
 	Namespace *string `json:"namespace,omitempty"`
 }
 
@@ -285,7 +283,7 @@ type ArgoCDIngressSpec struct {
 	Annotations map[string]string `json:"annotations,omitempty"`
 
 	// Enabled will toggle the creation of the Ingress.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Ingress Enabled'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Grafana","urn:alm:descriptor:com.tectonic.ui:fieldGroup:Prometheus","urn:alm:descriptor:com.tectonic.ui:fieldGroup:Server","urn:alm:descriptor:com.tectonic.ui:booleanSwitch"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Ingress Enabled'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Grafana","urn:alm:descriptor:com.tectonic.ui:fieldGroup:Prometheus","urn:alm:descriptor:com.tectonic.ui:fieldGroup:Server","urn:alm:descriptor:com.tectonic.ui:booleanSwitch"}
 	Enabled bool `json:"enabled"`
 
 	// IngressClassName for the Ingress resource.
@@ -324,8 +322,6 @@ type ArgoCDKeycloakSpec struct {
 	Host string `json:"host,omitempty"`
 }
 
-//+kubebuilder:object:root=true
-
 // ArgoCDList contains a list of ArgoCD
 type ArgoCDList struct {
 	metav1.TypeMeta `json:",inline"`
@@ -361,11 +357,11 @@ type ArgoCDNotifications struct {
 // ArgoCDPrometheusSpec defines the desired state for the Prometheus component.
 type ArgoCDPrometheusSpec struct {
 	// Enabled will toggle Prometheus support globally for ArgoCD.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Enabled",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Prometheus","urn:alm:descriptor:com.tectonic.ui:booleanSwitch"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Enabled",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Prometheus","urn:alm:descriptor:com.tectonic.ui:booleanSwitch"}
 	Enabled bool `json:"enabled"`
 
 	// Host is the hostname to use for Ingress/Route resources.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Host",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Prometheus","urn:alm:descriptor:com.tectonic.ui:text"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Host",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Prometheus","urn:alm:descriptor:com.tectonic.ui:text"}
 	Host string `json:"host,omitempty"`
 
 	// Ingress defines the desired state for an Ingress for the Prometheus component.
@@ -375,7 +371,7 @@ type ArgoCDPrometheusSpec struct {
 	Route ArgoCDRouteSpec `json:"route,omitempty"`
 
 	// Size is the replica count for the Prometheus StatefulSet.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Size",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Prometheus","urn:alm:descriptor:com.tectonic.ui:podCount"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Size",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Prometheus","urn:alm:descriptor:com.tectonic.ui:podCount"}
 	Size *int32 `json:"size,omitempty"`
 }
 
@@ -384,7 +380,7 @@ type ArgoCDRBACSpec struct {
 	// DefaultPolicy is the name of the default role which Argo CD will falls back to, when
 	// authorizing API requests (optional). If omitted or empty, users may be still be able to login,
 	// but will see no apps, projects, etc...
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Default Policy'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:RBAC","urn:alm:descriptor:com.tectonic.ui:text"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Default Policy'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:RBAC","urn:alm:descriptor:com.tectonic.ui:text"}
 	DefaultPolicy *string `json:"defaultPolicy,omitempty"`
 
 	// Policy is CSV containing user-defined RBAC policies and role definitions.
@@ -393,12 +389,11 @@ type ArgoCDRBACSpec struct {
 	// Role definitions and bindings are in the form:
 	//   g, subject, inherited-subject
 	// See https://github.com/argoproj/argo-cd/blob/master/docs/operator-manual/rbac.md for additional information.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Policy",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:RBAC","urn:alm:descriptor:com.tectonic.ui:text"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Policy",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:RBAC","urn:alm:descriptor:com.tectonic.ui:text"}
 	Policy *string `json:"policy,omitempty"`
 
 	// Scopes controls which OIDC scopes to examine during rbac enforcement (in addition to `sub` scope).
 	// If omitted, defaults to: '[groups]'.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Scopes",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:RBAC","urn:alm:descriptor:com.tectonic.ui:text"}
 	Scopes *string `json:"scopes,omitempty"`
 
 	// PolicyMatcherMode configures the matchers function mode for casbin.
@@ -409,15 +404,15 @@ type ArgoCDRBACSpec struct {
 // ArgoCDRedisSpec defines the desired state for the Redis server component.
 type ArgoCDRedisSpec struct {
 	// Image is the Redis container image.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Image",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Redis","urn:alm:descriptor:com.tectonic.ui:text"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Image",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Redis","urn:alm:descriptor:com.tectonic.ui:text"}
 	Image string `json:"image,omitempty"`
 
 	// Resources defines the Compute Resources required by the container for Redis.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Resource Requirements'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Redis","urn:alm:descriptor:com.tectonic.ui:resourceRequirements"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Resource Requirements'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Redis","urn:alm:descriptor:com.tectonic.ui:resourceRequirements"}
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 
 	// Version is the Redis container image tag.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Version",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Redis","urn:alm:descriptor:com.tectonic.ui:text"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Version",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Redis","urn:alm:descriptor:com.tectonic.ui:text"}
 	Version string `json:"version,omitempty"`
 
 	// DisableTLSVerification defines whether redis server API should be accessed using strict TLS validation
@@ -433,14 +428,6 @@ type ArgoCDRedisSpec struct {
 
 	// Remote specifies the remote URL of the Redis container. (optional, by default, a local instance managed by the operator is used.)
 	Remote *string `json:"remote,omitempty"`
-}
-
-func (a *ArgoCDRedisSpec) IsEnabled() bool {
-	return a.Enabled == nil || (a.Enabled != nil && *a.Enabled)
-}
-
-func (a *ArgoCDRedisSpec) IsRemote() bool {
-	return a.Remote != nil && *a.Remote != ""
 }
 
 // ArgoCDRepoSpec defines the desired state for the Argo CD repo server component.
@@ -464,7 +451,7 @@ type ArgoCDRepoSpec struct {
 	Replicas *int32 `json:"replicas,omitempty"`
 
 	// Resources defines the Compute Resources required by the container for Redis.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Resource Requirements'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Repo","urn:alm:descriptor:com.tectonic.ui:resourceRequirements"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Resource Requirements'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Repo","urn:alm:descriptor:com.tectonic.ui:resourceRequirements"}
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 
 	// ServiceAccount defines the ServiceAccount user that you would like the Repo server to use
@@ -517,14 +504,6 @@ type ArgoCDRepoSpec struct {
 	Labels map[string]string `json:"labels,omitempty"`
 }
 
-func (a *ArgoCDRepoSpec) IsEnabled() bool {
-	return a.Enabled == nil || (a.Enabled != nil && *a.Enabled)
-}
-
-func (a *ArgoCDRepoSpec) IsRemote() bool {
-	return a.Remote != nil && *a.Remote != ""
-}
-
 // ArgoCDRouteSpec defines the desired state for an OpenShift Route.
 type ArgoCDRouteSpec struct {
 	// Annotations is the map of annotations to use for the Route resource.
@@ -534,7 +513,6 @@ type ArgoCDRouteSpec struct {
 	Labels map[string]string `json:"labels,omitempty"`
 
 	// Enabled will toggle the creation of the OpenShift Route.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Route Enabled'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Grafana","urn:alm:descriptor:com.tectonic.ui:fieldGroup:Prometheus","urn:alm:descriptor:com.tectonic.ui:fieldGroup:Server","urn:alm:descriptor:com.tectonic.ui:booleanSwitch"}
 	Enabled bool `json:"enabled"`
 
 	// Path the router watches for, to route traffic for to the service.
@@ -550,7 +528,6 @@ type ArgoCDRouteSpec struct {
 // ArgoCDServerAutoscaleSpec defines the desired state for autoscaling the Argo CD Server component.
 type ArgoCDServerAutoscaleSpec struct {
 	// Enabled will toggle autoscaling support for the Argo CD Server component.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Autoscale Enabled'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Server","urn:alm:descriptor:com.tectonic.ui:booleanSwitch"}
 	Enabled bool `json:"enabled"`
 
 	// HPA defines the HorizontalPodAutoscaler options for the Argo CD Server component.
@@ -560,11 +537,11 @@ type ArgoCDServerAutoscaleSpec struct {
 // ArgoCDServerGRPCSpec defines the desired state for the Argo CD Server GRPC options.
 type ArgoCDServerGRPCSpec struct {
 	// Host is the hostname to use for Ingress/Route resources.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="GRPC Host",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Server","urn:alm:descriptor:com.tectonic.ui:text"}
+	//:csv:customresourcedefinitions:type=spec,displayName="GRPC Host",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Server","urn:alm:descriptor:com.tectonic.ui:text"}
 	Host string `json:"host,omitempty"`
 
 	// Ingress defines the desired state for the Argo CD Server GRPC Ingress.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="GRPC Ingress Enabled'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Server","urn:alm:descriptor:com.tectonic.ui:booleanSwitch"}
+	//:csv:customresourcedefinitions:type=spec,displayName="GRPC Ingress Enabled'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Server","urn:alm:descriptor:com.tectonic.ui:booleanSwitch"}
 	Ingress ArgoCDIngressSpec `json:"ingress,omitempty"`
 }
 
@@ -583,14 +560,13 @@ type ArgoCDServerSpec struct {
 	InitContainers []corev1.Container `json:"initContainers,omitempty"`
 
 	// Host is the hostname to use for Ingress/Route resources.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Host",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Server","urn:alm:descriptor:com.tectonic.ui:text"}
 	Host string `json:"host,omitempty"`
 
 	// Ingress defines the desired state for an Ingress for the Argo CD Server component.
 	Ingress ArgoCDIngressSpec `json:"ingress,omitempty"`
 
 	// Insecure toggles the insecure flag.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Insecure",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Server","urn:alm:descriptor:com.tectonic.ui:booleanSwitch"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Insecure",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Server","urn:alm:descriptor:com.tectonic.ui:booleanSwitch"}
 	Insecure bool `json:"insecure,omitempty"`
 
 	// LogLevel refers to the log level to be used by the ArgoCD Server component. Defaults to ArgoCDDefaultLogLevel if not set.  Valid options are debug, info, error, and warn.
@@ -603,7 +579,7 @@ type ArgoCDServerSpec struct {
 	Replicas *int32 `json:"replicas,omitempty"`
 
 	// Resources defines the Compute Resources required by the container for the Argo CD server component.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Resource Requirements'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Server","urn:alm:descriptor:com.tectonic.ui:resourceRequirements"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Resource Requirements'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Server","urn:alm:descriptor:com.tectonic.ui:resourceRequirements"}
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 
 	// Route defines the desired state for an OpenShift Route for the Argo CD Server component.
@@ -646,7 +622,6 @@ func (a *ArgoCDServerSpec) IsEnabled() bool {
 // ArgoCDServerServiceSpec defines the Service options for Argo CD Server component.
 type ArgoCDServerServiceSpec struct {
 	// Type is the ServiceType to use for the Service resource.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Service Type'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Server","urn:alm:descriptor:com.tectonic.ui:text"}
 	Type corev1.ServiceType `json:"type"`
 }
 
@@ -735,22 +710,21 @@ type ArgoCDNodePlacementSpec struct {
 }
 
 // ArgoCDSpec defines the desired state of ArgoCD
-// +k8s:openapi-gen=true
 type ArgoCDSpec struct {
 
 	// ArgoCDApplicationSet defines whether the Argo CD ApplicationSet controller should be installed.
 	ApplicationSet *ArgoCDApplicationSet `json:"applicationSet,omitempty"`
 
 	// ApplicationInstanceLabelKey is the key name where Argo CD injects the app name as a tracking label.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Application Instance Label Key'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text","urn:alm:descriptor:com.tectonic.ui:advanced"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Application Instance Label Key'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text","urn:alm:descriptor:com.tectonic.ui:advanced"}
 	ApplicationInstanceLabelKey string `json:"applicationInstanceLabelKey,omitempty"`
 
 	// InstallationID uniquely identifies an Argo CD instance in multi-instance clusters.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Installation ID",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text","urn:alm:descriptor:com.tectonic.ui:advanced"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Installation ID",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text","urn:alm:descriptor:com.tectonic.ui:advanced"}
 	InstallationID string `json:"installationID,omitempty"`
 
 	// ConfigManagementPlugins is used to specify additional config management plugins.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Config Management Plugins'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text","urn:alm:descriptor:com.tectonic.ui:advanced"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Config Management Plugins'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text","urn:alm:descriptor:com.tectonic.ui:advanced"}
 	ConfigManagementPlugins string `json:"configManagementPlugins,omitempty"`
 
 	// Controller defines the Application Controller options for ArgoCD.
@@ -768,11 +742,11 @@ type ArgoCDSpec struct {
 	ExtraConfig map[string]string `json:"extraConfig,omitempty"`
 
 	// GATrackingID is the google analytics tracking ID to use.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Google Analytics Tracking ID'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text","urn:alm:descriptor:com.tectonic.ui:advanced"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Google Analytics Tracking ID'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text","urn:alm:descriptor:com.tectonic.ui:advanced"}
 	GATrackingID string `json:"gaTrackingID,omitempty"`
 
 	// GAAnonymizeUsers toggles user IDs being hashed before sending to google analytics.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Google Analytics Anonymize Users'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:booleanSwitch","urn:alm:descriptor:com.tectonic.ui:advanced"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Google Analytics Anonymize Users'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:booleanSwitch","urn:alm:descriptor:com.tectonic.ui:advanced"}
 	GAAnonymizeUsers bool `json:"gaAnonymizeUsers,omitempty"`
 
 	// Deprecated: Grafana defines the Grafana server options for ArgoCD.
@@ -782,22 +756,22 @@ type ArgoCDSpec struct {
 	HA ArgoCDHASpec `json:"ha,omitempty"`
 
 	// HelpChatURL is the URL for getting chat help, this will typically be your Slack channel for support.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Help Chat URL'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text","urn:alm:descriptor:com.tectonic.ui:advanced"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Help Chat URL'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text","urn:alm:descriptor:com.tectonic.ui:advanced"}
 	HelpChatURL string `json:"helpChatURL,omitempty"`
 
 	// HelpChatText is the text for getting chat help, defaults to "Chat now!"
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Help Chat Text'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text","urn:alm:descriptor:com.tectonic.ui:advanced"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Help Chat Text'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text","urn:alm:descriptor:com.tectonic.ui:advanced"}
 	HelpChatText string `json:"helpChatText,omitempty"`
 
 	// Image is the ArgoCD container image for all ArgoCD components.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Image",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:ArgoCD","urn:alm:descriptor:com.tectonic.ui:text"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Image",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:ArgoCD","urn:alm:descriptor:com.tectonic.ui:text"}
 	Image string `json:"image,omitempty"`
 
 	// Import is the import/restore options for ArgoCD.
 	Import *ArgoCDImportSpec `json:"import,omitempty"`
 
 	// InitialRepositories to configure Argo CD with upon creation of the cluster.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Initial Repositories'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text","urn:alm:descriptor:com.tectonic.ui:advanced"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Initial Repositories'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text","urn:alm:descriptor:com.tectonic.ui:advanced"}
 	InitialRepositories string `json:"initialRepositories,omitempty"`
 
 	// InitialSSHKnownHosts defines the SSH known hosts data upon creation of the cluster for connecting Git repositories via SSH.
@@ -807,11 +781,11 @@ type ArgoCDSpec struct {
 	KustomizeBuildOptions string `json:"kustomizeBuildOptions,omitempty"`
 
 	// KustomizeVersions is a listing of configured versions of Kustomize to be made available within ArgoCD.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Kustomize Build Options'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text","urn:alm:descriptor:com.tectonic.ui:advanced"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Kustomize Build Options'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text","urn:alm:descriptor:com.tectonic.ui:advanced"}
 	KustomizeVersions []KustomizeVersionSpec `json:"kustomizeVersions,omitempty"`
 
 	// OIDCConfig is the OIDC configuration as an alternative to dex.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="OIDC Config'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text","urn:alm:descriptor:com.tectonic.ui:advanced"}
+	//:csv:customresourcedefinitions:type=spec,displayName="OIDC Config'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text","urn:alm:descriptor:com.tectonic.ui:advanced"}
 	OIDCConfig string `json:"oidcConfig,omitempty"`
 
 	// Monitoring defines whether workload status monitoring configuration for this instance.
@@ -839,19 +813,19 @@ type ArgoCDSpec struct {
 	RepositoryCredentials string `json:"repositoryCredentials,omitempty"`
 
 	// ResourceHealthChecks customizes resource health check behavior.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Resource Health Check Customizations'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text","urn:alm:descriptor:com.tectonic.ui:advanced"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Resource Health Check Customizations'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text","urn:alm:descriptor:com.tectonic.ui:advanced"}
 	ResourceHealthChecks []ResourceHealthCheck `json:"resourceHealthChecks,omitempty"`
 
 	// ResourceIgnoreDifferences customizes resource ignore difference behavior.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Resource Ignore Difference Customizations'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text","urn:alm:descriptor:com.tectonic.ui:advanced"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Resource Ignore Difference Customizations'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text","urn:alm:descriptor:com.tectonic.ui:advanced"}
 	ResourceIgnoreDifferences *ResourceIgnoreDifference `json:"resourceIgnoreDifferences,omitempty"`
 
 	// ResourceActions customizes resource action behavior.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Resource Action Customizations'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text","urn:alm:descriptor:com.tectonic.ui:advanced"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Resource Action Customizations'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text","urn:alm:descriptor:com.tectonic.ui:advanced"}
 	ResourceActions []ResourceAction `json:"resourceActions,omitempty"`
 
 	// ResourceExclusions is used to completely ignore entire classes of resource group/kinds.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Resource Exclusions'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text","urn:alm:descriptor:com.tectonic.ui:advanced"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Resource Exclusions'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text","urn:alm:descriptor:com.tectonic.ui:advanced"}
 	ResourceExclusions string `json:"resourceExclusions,omitempty"`
 
 	// ResourceInclusions is used to only include specific group/kinds in the
@@ -859,7 +833,7 @@ type ArgoCDSpec struct {
 	ResourceInclusions string `json:"resourceInclusions,omitempty"`
 
 	// ResourceTrackingMethod defines how Argo CD should track resources that it manages
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Resource Tracking Method'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text","urn:alm:descriptor:com.tectonic.ui:advanced"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Resource Tracking Method'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text","urn:alm:descriptor:com.tectonic.ui:advanced"}
 	ResourceTrackingMethod string `json:"resourceTrackingMethod,omitempty"`
 
 	// Server defines the options for the ArgoCD Server component.
@@ -872,7 +846,7 @@ type ArgoCDSpec struct {
 	SSO *ArgoCDSSOSpec `json:"sso,omitempty"`
 
 	// StatusBadgeEnabled toggles application status badge feature.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Status Badge Enabled'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:booleanSwitch","urn:alm:descriptor:com.tectonic.ui:advanced"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Status Badge Enabled'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:booleanSwitch","urn:alm:descriptor:com.tectonic.ui:advanced"}
 	StatusBadgeEnabled bool `json:"statusBadgeEnabled,omitempty"`
 
 	// TLS defines the TLS options for ArgoCD.
@@ -880,11 +854,11 @@ type ArgoCDSpec struct {
 
 	// UsersAnonymousEnabled toggles anonymous user access.
 	// The anonymous users get default role permissions specified argocd-rbac-cm.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Anonymous Users Enabled'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:booleanSwitch","urn:alm:descriptor:com.tectonic.ui:advanced"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Anonymous Users Enabled'",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:booleanSwitch","urn:alm:descriptor:com.tectonic.ui:advanced"}
 	UsersAnonymousEnabled bool `json:"usersAnonymousEnabled,omitempty"`
 
 	// Version is the tag to use with the ArgoCD container image for all ArgoCD components.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Version",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:ArgoCD","urn:alm:descriptor:com.tectonic.ui:text"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Version",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:ArgoCD","urn:alm:descriptor:com.tectonic.ui:text"}
 	Version string `json:"version,omitempty"`
 
 	// Banner defines an additional banner to be displayed in Argo CD UI
@@ -907,7 +881,6 @@ const (
 )
 
 // ArgoCDStatus defines the observed state of ArgoCD
-// +k8s:openapi-gen=true
 type ArgoCDStatus struct {
 	// ApplicationController is a simple, high-level summary of where the Argo CD application controller component is in its lifecycle.
 	// There are four possible ApplicationController values:
@@ -915,7 +888,7 @@ type ArgoCDStatus struct {
 	// Running: All of the required Pods for the Argo CD application controller component are in a Ready state.
 	// Failed: At least one of the  Argo CD application controller component Pods had a failure.
 	// Unknown: The state of the Argo CD application controller component could not be obtained.
-	//+operator-sdk:csv:customresourcedefinitions:type=status,displayName="ApplicationController",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text"}
+	//:csv:customresourcedefinitions:type=status,displayName="ApplicationController",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text"}
 	ApplicationController string `json:"applicationController,omitempty"`
 
 	// ApplicationSetController is a simple, high-level summary of where the Argo CD applicationSet controller component is in its lifecycle.
@@ -924,7 +897,7 @@ type ArgoCDStatus struct {
 	// Running: All of the required Pods for the Argo CD applicationSet controller component are in a Ready state.
 	// Failed: At least one of the  Argo CD applicationSet controller component Pods had a failure.
 	// Unknown: The state of the Argo CD applicationSet controller component could not be obtained.
-	//+operator-sdk:csv:customresourcedefinitions:type=status,displayName="ApplicationSetController",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text"}
+	//:csv:customresourcedefinitions:type=status,displayName="ApplicationSetController",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text"}
 	ApplicationSetController string `json:"applicationSetController,omitempty"`
 
 	// SSO is a simple, high-level summary of where the Argo CD SSO(Dex/Keycloak) component is in its lifecycle.
@@ -933,7 +906,7 @@ type ArgoCDStatus struct {
 	// Running: All of the required Pods for the Argo CD SSO component are in a Ready state.
 	// Failed: At least one of the  Argo CD SSO component Pods had a failure.
 	// Unknown: The state of the Argo CD SSO component could not be obtained.
-	//+operator-sdk:csv:customresourcedefinitions:type=status,displayName="SSO",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text"}
+	//:csv:customresourcedefinitions:type=status,displayName="SSO",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text"}
 	SSO string `json:"sso,omitempty"`
 
 	// NotificationsController is a simple, high-level summary of where the Argo CD notifications controller component is in its lifecycle.
@@ -942,7 +915,7 @@ type ArgoCDStatus struct {
 	// Running: All of the required Pods for the Argo CD notifications controller component are in a Ready state.
 	// Failed: At least one of the  Argo CD notifications controller component Pods had a failure.
 	// Unknown: The state of the Argo CD notifications controller component could not be obtained.
-	//+operator-sdk:csv:customresourcedefinitions:type=status,displayName="NotificationsController",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text"}
+	//:csv:customresourcedefinitions:type=status,displayName="NotificationsController",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text"}
 	NotificationsController string `json:"notificationsController,omitempty"`
 
 	// Phase is a simple, high-level summary of where the ArgoCD is in its lifecycle.
@@ -951,7 +924,7 @@ type ArgoCDStatus struct {
 	// Available: All of the resources for the ArgoCD are ready.
 	// Failed: At least one resource has experienced a failure.
 	// Unknown: The state of the ArgoCD phase could not be obtained.
-	//+operator-sdk:csv:customresourcedefinitions:type=status,displayName="Phase",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text"}
+	//:csv:customresourcedefinitions:type=status,displayName="Phase",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text"}
 	Phase string `json:"phase,omitempty"`
 
 	// Redis is a simple, high-level summary of where the Argo CD Redis component is in its lifecycle.
@@ -960,7 +933,7 @@ type ArgoCDStatus struct {
 	// Running: All of the required Pods for the Argo CD Redis component are in a Ready state.
 	// Failed: At least one of the  Argo CD Redis component Pods had a failure.
 	// Unknown: The state of the Argo CD Redis component could not be obtained.
-	//+operator-sdk:csv:customresourcedefinitions:type=status,displayName="Redis",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text"}
+	//:csv:customresourcedefinitions:type=status,displayName="Redis",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text"}
 	Redis string `json:"redis,omitempty"`
 
 	// Repo is a simple, high-level summary of where the Argo CD Repo component is in its lifecycle.
@@ -969,7 +942,7 @@ type ArgoCDStatus struct {
 	// Running: All of the required Pods for the Argo CD Repo component are in a Ready state.
 	// Failed: At least one of the  Argo CD Repo component Pods had a failure.
 	// Unknown: The state of the Argo CD Repo component could not be obtained.
-	//+operator-sdk:csv:customresourcedefinitions:type=status,displayName="Repo",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text"}
+	//:csv:customresourcedefinitions:type=status,displayName="Repo",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text"}
 	Repo string `json:"repo,omitempty"`
 
 	// Server is a simple, high-level summary of where the Argo CD server component is in its lifecycle.
@@ -978,7 +951,7 @@ type ArgoCDStatus struct {
 	// Running: All of the required Pods for the Argo CD server component are in a Ready state.
 	// Failed: At least one of the  Argo CD server component Pods had a failure.
 	// Unknown: The state of the Argo CD server component could not be obtained.
-	//+operator-sdk:csv:customresourcedefinitions:type=status,displayName="Server",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text"}
+	//:csv:customresourcedefinitions:type=status,displayName="Server",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text"}
 	Server string `json:"server,omitempty"`
 
 	// RepoTLSChecksum contains the SHA256 checksum of the latest known state of tls.crt and tls.key in the argocd-repo-server-tls secret.
@@ -1026,7 +999,7 @@ type SSHHostsSpec struct {
 type WebhookServerSpec struct {
 
 	// Host is the hostname to use for Ingress/Route resources.
-	//+operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Host",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Server","urn:alm:descriptor:com.tectonic.ui:text"}
+	//:csv:customresourcedefinitions:type=spec,displayName="Host",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:fieldGroup:Server","urn:alm:descriptor:com.tectonic.ui:text"}
 	Host string `json:"host,omitempty"`
 
 	// Ingress defines the desired state for an Ingress for the Application set webhook component.
