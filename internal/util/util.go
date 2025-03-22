@@ -961,7 +961,7 @@ func OnTunedProfileUpdate(newObj interface{}, spec *ocpscanv1.OcpHealthCheckSpec
 		return
 	}
 	for _, cond := range tp.Status.Conditions {
-		if (cond.Type == TUNEDAPPLIED && cond.Type == NODEREADYFalse) || (cond.Type == MACHINECONFIGUPDATEDEGRADED && cond.Status == NODEREADYTrue) {
+		if (cond.Type == TUNEDAPPLIED && cond.Status == NODEREADYFalse) || (cond.Type == MACHINECONFIGUPDATEDEGRADED && cond.Status == NODEREADYTrue) {
 			SendEmail("TunedProfile", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "tuned-profile", tp.Name), "faulty", fmt.Sprintf("TunedProfile %s's status condition in node %s is either degraded or not-applied in cluster %s, please execute <oc get profiles.tuned.openshift.io %s -n %s | jq .status> to validate it", tp.Status.TunedProfile, tp.Name, runningHost, tp.Name, tp.Namespace), runningHost, spec)
 		} else {
 			SendEmail("TunedProfile", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "tuned-profile", tp.Name), "recovered", fmt.Sprintf("TunedProfile %s's status condition in node %s is recovered in cluster %s, please execute <oc get tunedprofile %s -n %s | jq .status> to validate it", tp.Status.TunedProfile, tp.Name, runningHost, tp.Name, tp.Namespace), runningHost, spec)
