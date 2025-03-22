@@ -1,13 +1,9 @@
 module github.com/barani129/ocphealthcheckinf
 
-go 1.23.4
-
-toolchain go1.23.5
-
-godebug default=go1.23
+go 1.23.2
 
 require (
-	github.com/nmstate/kubernetes-nmstate/api v0.0.0-20250318154334-cc19e9f20c96
+	github.com/nmstate/kubernetes-nmstate/api v0.0.0-20240422131619-bc2ede247e1a
 	github.com/onsi/ginkgo/v2 v2.22.1
 	github.com/onsi/gomega v1.36.2
 	github.com/openshift/api v0.0.0-20250313134101-8a7efbfb5316
