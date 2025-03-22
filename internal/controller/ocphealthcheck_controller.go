@@ -260,7 +260,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	tpInformer := nsFactory.ForResource(tpResource).Informer()
 	var mcInformer cache.SharedIndexInformer
 	var argoInformer cache.SharedIndexInformer
-	if spec.HubCluster != nil && *spec.HubCluster {
+	if spec.HubCluster != nil && !*spec.HubCluster {
 		mcInformer = nsFactory.ForResource(mcResource).Informer()
 		argoInformer = nsFactory.ForResource(argoResource).Informer()
 	}
@@ -395,7 +395,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			util.OnTunedProfileUpdate(newObj, spec, runningHost)
 		},
 	})
-	if spec.HubCluster != nil && *spec.HubCluster {
+	if spec.HubCluster != nil && !*spec.HubCluster {
 		mcInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			UpdateFunc: func(oldObj, newObj interface{}) {
 				mux.RLock()
@@ -426,8 +426,8 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// TO DO:
 	// NNCP, CO, Sub, catalogsource
 	log.Log.Info("Waiting for cache sync")
-	var isSynced bool = false
-	if spec.HubCluster != nil && *spec.HubCluster {
+	var isSynced bool
+	if spec.HubCluster != nil && !*spec.HubCluster {
 		isSynced = cache.WaitForCacheSync(ctx.Done(), podInformer.HasSynced, nodeInformer.HasSynced, mcpInformer.HasSynced, policyInformer.HasSynced, coInformer.HasSynced, nncpInformer.HasSynced, catalogInformer.HasSynced, csvInformer.HasSynced, mcInformer.HasSynced, argoInformer.HasSynced, tpInformer.HasSynced)
 	} else {
 		isSynced = cache.WaitForCacheSync(ctx.Done(), podInformer.HasSynced, nodeInformer.HasSynced, mcpInformer.HasSynced, policyInformer.HasSynced, coInformer.HasSynced, nncpInformer.HasSynced, catalogInformer.HasSynced, csvInformer.HasSynced, tpInformer.HasSynced)
