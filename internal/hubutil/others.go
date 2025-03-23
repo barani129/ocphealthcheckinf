@@ -155,7 +155,7 @@ func OnArgoUpdate(clientset *kubernetes.Clientset, spec *ocpscanv1.OcpHealthChec
 		if argocd.Status.ApplicationController != ocphealthcheckutil.ARGORUNNING || argocd.Status.Phase != ocphealthcheckutil.ARGOAVAILABLE || argocd.Status.Redis != ocphealthcheckutil.ARGORUNNING || argocd.Status.Repo != ocphealthcheckutil.ARGORUNNING || argocd.Status.Server != ocphealthcheckutil.ARGORUNNING || argocd.Status.SSO != ocphealthcheckutil.ARGORUNNING {
 			ocphealthcheckutil.SendEmail("ArgoCD", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", argocd.Name, argocd.Namespace), "faulty", fmt.Sprintf("ArgoCD %s's status condition is either not-running/unavailable in namespace %s of cluster %s, please execute <oc get argocd %s -n %s -o json | jq .status> to validate it", argocd.Name, argocd.Namespace, runningHost, argocd.Name, argocd.Namespace), runningHost, spec)
 		} else {
-			ocphealthcheckutil.SendEmail("ArgoCD", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", argocd.Name, argocd.Namespace), "recovered", fmt.Sprintf("ArgoCD %s's status condition is either not-running/unavailable in namespace %s of cluster %s, please execute <oc get argocd %s -n %s -o json | jq .status> to validate it", argocd.Name, argocd.Namespace, runningHost, argocd.Name, argocd.Namespace), runningHost, spec)
+			ocphealthcheckutil.SendEmail("ArgoCD", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", argocd.Name, argocd.Namespace), "recovered", fmt.Sprintf("ArgoCD %s's status condition is back to working condition in namespace %s of cluster %s, please execute <oc get argocd %s -n %s -o json | jq .status> to validate it", argocd.Name, argocd.Namespace, runningHost, argocd.Name, argocd.Namespace), runningHost, spec)
 		}
 	}
 }
