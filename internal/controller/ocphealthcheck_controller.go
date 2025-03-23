@@ -23,6 +23,7 @@ import (
 	"time"
 
 	ocphealthcheckv1 "github.com/barani129/ocphealthcheckinf/api/v1"
+	"github.com/barani129/ocphealthcheckinf/internal/hubutil"
 	"github.com/barani129/ocphealthcheckinf/internal/util"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -109,7 +110,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	if spec.Suspend != nil && *spec.Suspend {
 		log.Log.Info("OcpHealthCheck is suspended, skipping...")
-		return ctrl.Result{RequeueAfter: time.Minute * 30}, nil
+		return ctrl.Result{}, nil
 	}
 
 	if spec.SuspendEmailAlert != nil && !*spec.SuspendEmailAlert {
@@ -160,11 +161,6 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	clientset, err := dynamic.NewForConfig(config)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
 	staticClientSet, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -183,263 +179,257 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		runningHost = "local-cluster"
 	}
 
-	podResource := schema.GroupVersionResource{
-		Group:    "",
-		Version:  "v1",
-		Resource: "pods",
-	}
-	nodeResource := schema.GroupVersionResource{
-		Group:    "",
-		Version:  "v1",
-		Resource: "nodes",
-	}
-
-	mcpResource := schema.GroupVersionResource{
-		Group:    "machineconfiguration.openshift.io",
-		Version:  "v1",
-		Resource: "machineconfigpools",
-	}
-
-	policyResource := schema.GroupVersionResource{
-		Group:    "policy.open-cluster-management.io",
-		Version:  "v1",
-		Resource: "policies",
-	}
-
-	coResource := schema.GroupVersionResource{
-		Group:    "config.openshift.io",
-		Version:  "v1",
-		Resource: "clusteroperators",
-	}
-
-	nncpResource := schema.GroupVersionResource{
-		Group:    "nmstate.io",
-		Version:  "v1",
-		Resource: "nodenetworkconfigurationpolicies",
-	}
-
-	catalogResource := schema.GroupVersionResource{
-		Group:    "operators.coreos.com",
-		Version:  "v1alpha1",
-		Resource: "catalogsources",
-	}
-
-	csvResource := schema.GroupVersionResource{
-		Group:    "operators.coreos.com",
-		Version:  "v1alpha1",
-		Resource: "clusterserviceversions",
-	}
-
-	mcResource := schema.GroupVersionResource{
-		Group:    "cluster.open-cluster-management.io",
-		Version:  "v1",
-		Resource: "managedclusters",
-	}
-
-	argoResource := schema.GroupVersionResource{
-		Group:    "argoproj.io",
-		Version:  "v1beta1",
-		Resource: "argocds",
-	}
-
-	tpResource := schema.GroupVersionResource{
-		Group:    "tuned.openshift.io",
-		Version:  "v1",
-		Resource: "profiles",
-	}
-
-	nsFactory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(clientset, time.Minute*10, corev1.NamespaceAll, nil)
-	mcpInformer := nsFactory.ForResource(mcpResource).Informer()
-	podInformer := nsFactory.ForResource(podResource).Informer()
-	nodeInformer := nsFactory.ForResource(nodeResource).Informer()
-	policyInformer := nsFactory.ForResource(policyResource).Informer()
-	coInformer := nsFactory.ForResource(coResource).Informer()
-	nncpInformer := nsFactory.ForResource(nncpResource).Informer()
-	catalogInformer := nsFactory.ForResource(catalogResource).Informer()
-	csvInformer := nsFactory.ForResource(csvResource).Informer()
-	tpInformer := nsFactory.ForResource(tpResource).Informer()
-	var mcInformer cache.SharedIndexInformer
-	var argoInformer cache.SharedIndexInformer
 	if spec.HubCluster != nil && *spec.HubCluster {
-		mcInformer = nsFactory.ForResource(mcResource).Informer()
-		argoInformer = nsFactory.ForResource(argoResource).Informer()
-	}
-
-	mux := &sync.RWMutex{}
-	synced := false
-	// logic for mcp handling: check if mcp is in progress, if in progress, fetch the node based on labels
-	// mcp.spec.nodeSelector.matchLabels
-	// check if annotation["machineconfiguration.openshift.io/state"] is set to other than Done
-	// if not, assuming that mcp is actually in progress and exiting, otherwise continue with the flow
-	mcpInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			mux.RLock()
-			defer mux.RUnlock()
-			if !synced {
-				return
-			}
-			util.OnMCPUpdate(newObj, staticClientSet, status, spec, runningHost)
-			util.CleanUpRunningPods(staticClientSet, spec, status, runningHost)
-		},
-	})
-	log.Log.Info("Adding add pod events to pod informer")
-	podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(oldObj interface{}) {
-			mux.RLock()
-			defer mux.RUnlock()
-			if !synced {
-				return
-			}
-			util.OnPodAdd(oldObj)
-		},
-		UpdateFunc: func(oldObj interface{}, newObj interface{}) {
-			mux.RLock()
-			defer mux.RUnlock()
-			if !synced {
-				return
-			}
-			util.OnPodUpdate(newObj, spec, status, runningHost, staticClientSet)
-		},
-		DeleteFunc: func(obj interface{}) {
-			mux.RLock()
-			defer mux.RUnlock()
-			if !synced {
-				return
-			}
-			util.OnPodDelete(obj, staticClientSet, spec, status, runningHost)
-		},
-	})
-	nodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			mux.RLock()
-			defer mux.RUnlock()
-			if !synced {
-				return
-			}
-			util.OnNodeUpdate(newObj, spec, status, runningHost)
-		},
-	})
-	policyInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			mux.RLock()
-			defer mux.RUnlock()
-			if !synced {
-				return
-			}
-			util.OnPolicyAdd(obj, spec, status)
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			mux.RLock()
-			defer mux.RUnlock()
-			if !synced {
-				return
-			}
-			util.OnPolicyUpdate(newObj, staticClientSet, spec, status, runningHost)
-		},
-		DeleteFunc: func(obj interface{}) {
-			mux.RLock()
-			defer mux.RUnlock()
-			if !synced {
-				return
-			}
-			util.OnPolicyDelete(obj, spec, status, runningHost)
-		},
-	})
-	coInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			mux.RLock()
-			defer mux.RUnlock()
-			if !synced {
-				return
-			}
-			util.OnCoUpdate(newObj, staticClientSet, spec, runningHost)
-		},
-	})
-	catalogInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			mux.RLock()
-			defer mux.RUnlock()
-			if !synced {
-				return
-			}
-			util.OnCatalogSourceUpdate(newObj, staticClientSet, spec, runningHost)
-		},
-	})
-	nncpInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			mux.RLock()
-			defer mux.RUnlock()
-			if !synced {
-				return
-			}
-			util.OnNNCPUpdate(newObj, staticClientSet, spec, runningHost)
-		},
-	})
-	csvInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			mux.RLock()
-			defer mux.RUnlock()
-			if !synced {
-				return
-			}
-			util.OnCsvUpdate(newObj, staticClientSet, spec, runningHost)
-		},
-	})
-	tpInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			mux.RLock()
-			defer mux.RUnlock()
-			if !synced {
-				return
-			}
-			util.OnTunedProfileUpdate(newObj, spec, runningHost)
-		},
-	})
-	if spec.HubCluster != nil && *spec.HubCluster {
-		mcInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			UpdateFunc: func(oldObj, newObj interface{}) {
-				mux.RLock()
-				defer mux.RUnlock()
-				if !synced {
-					return
-				}
-				util.OnManagedClusterUpdate(newObj, spec, runningHost)
-			},
-		})
-		argoInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			UpdateFunc: func(oldObj, newObj interface{}) {
-				mux.RLock()
-				defer mux.RUnlock()
-				if !synced {
-					return
-				}
-				util.OnArgoUpdate(newObj, spec, runningHost)
-			},
-		})
-	}
-	// go podInformer.Run(context.Background().Done())
-	if r.InformerCount < 2 {
-		log.Log.Info("Starting dynamic informer factory")
-		nsFactory.Start(ctx.Done())
-		r.InformerCount++
-	}
-	// TO DO:
-	// NNCP, CO, Sub, catalogsource
-	log.Log.Info("Waiting for cache sync")
-	var isSynced bool
-	if spec.HubCluster != nil && *spec.HubCluster {
-		isSynced = cache.WaitForCacheSync(ctx.Done(), podInformer.HasSynced, nodeInformer.HasSynced, mcpInformer.HasSynced, policyInformer.HasSynced, coInformer.HasSynced, nncpInformer.HasSynced, catalogInformer.HasSynced, csvInformer.HasSynced, mcInformer.HasSynced, argoInformer.HasSynced, tpInformer.HasSynced)
+		log.Log.Info("Running MCP Checks")
+		if inProgress, err := util.CheckMCPINProgress(staticClientSet); err != nil {
+			return ctrl.Result{RequeueAfter: time.Minute * 30}, err
+		} else if inProgress {
+			log.Log.Info("MCP update is in progress, exiting")
+			return ctrl.Result{RequeueAfter: time.Minute * 30}, fmt.Errorf("mcp is in progress")
+		}
+		hubutil.OnMCPUpdate(staticClientSet, spec, runningHost)
+		log.Log.Info("Running Pod Checks")
+		hubutil.OnPodUpdate(staticClientSet, spec, runningHost)
+		log.Log.Info("Running Node Checks")
+		hubutil.OnNodeUpdate(staticClientSet, spec, runningHost)
+		log.Log.Info("Running Policy Checks")
+		hubutil.OnPolicyUpdate(staticClientSet, spec, runningHost)
+		log.Log.Info("Running ClusterOperator Checks")
+		hubutil.OnCoUpdate(staticClientSet, spec, runningHost)
+		log.Log.Info("Running NNCP Checks")
+		hubutil.OnNNCPUpdate(staticClientSet, spec, runningHost)
+		log.Log.Info("Running CatalogSource Checks")
+		hubutil.OnCatalogSourceUpdate(staticClientSet, spec, runningHost)
+		log.Log.Info("Running ClusterServiceVersion Checks")
+		hubutil.OnCsvUpdate(staticClientSet, spec, runningHost)
+		log.Log.Info("Running ArgoCD Checks")
+		hubutil.OnArgoUpdate(staticClientSet, spec, runningHost)
+		log.Log.Info("Running ManagedCluster Checks")
+		hubutil.OnManagedClusterUpdate(staticClientSet, spec, runningHost)
+		util.CleanUpRunningPods(staticClientSet, spec, status, runningHost)
+		report(ocphealthcheckv1.ConditionTrue, "hub healthcheck functions compiled successfully", nil)
+		return ctrl.Result{Requeue: true}, nil
 	} else {
+		clientset, err := dynamic.NewForConfig(config)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		podResource := schema.GroupVersionResource{
+			Group:    "",
+			Version:  "v1",
+			Resource: "pods",
+		}
+		nodeResource := schema.GroupVersionResource{
+			Group:    "",
+			Version:  "v1",
+			Resource: "nodes",
+		}
+
+		mcpResource := schema.GroupVersionResource{
+			Group:    "machineconfiguration.openshift.io",
+			Version:  "v1",
+			Resource: "machineconfigpools",
+		}
+
+		policyResource := schema.GroupVersionResource{
+			Group:    "policy.open-cluster-management.io",
+			Version:  "v1",
+			Resource: "policies",
+		}
+
+		coResource := schema.GroupVersionResource{
+			Group:    "config.openshift.io",
+			Version:  "v1",
+			Resource: "clusteroperators",
+		}
+
+		nncpResource := schema.GroupVersionResource{
+			Group:    "nmstate.io",
+			Version:  "v1",
+			Resource: "nodenetworkconfigurationpolicies",
+		}
+
+		catalogResource := schema.GroupVersionResource{
+			Group:    "operators.coreos.com",
+			Version:  "v1alpha1",
+			Resource: "catalogsources",
+		}
+
+		csvResource := schema.GroupVersionResource{
+			Group:    "operators.coreos.com",
+			Version:  "v1alpha1",
+			Resource: "clusterserviceversions",
+		}
+
+		tpResource := schema.GroupVersionResource{
+			Group:    "tuned.openshift.io",
+			Version:  "v1",
+			Resource: "profiles",
+		}
+		nsFactory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(clientset, time.Minute*10, corev1.NamespaceAll, nil)
+		mcpInformer := nsFactory.ForResource(mcpResource).Informer()
+		podInformer := nsFactory.ForResource(podResource).Informer()
+		nodeInformer := nsFactory.ForResource(nodeResource).Informer()
+		policyInformer := nsFactory.ForResource(policyResource).Informer()
+		coInformer := nsFactory.ForResource(coResource).Informer()
+		nncpInformer := nsFactory.ForResource(nncpResource).Informer()
+		catalogInformer := nsFactory.ForResource(catalogResource).Informer()
+		csvInformer := nsFactory.ForResource(csvResource).Informer()
+		tpInformer := nsFactory.ForResource(tpResource).Informer()
+
+		mux := &sync.RWMutex{}
+		synced := false
+		// logic for mcp handling: check if mcp is in progress, if in progress, fetch the node based on labels
+		// mcp.spec.nodeSelector.matchLabels
+		// check if annotation["machineconfiguration.openshift.io/state"] is set to other than Done
+		// if not, assuming that mcp is actually in progress and exiting, otherwise continue with the flow
+		mcpInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				mux.RLock()
+				defer mux.RUnlock()
+				if !synced {
+					return
+				}
+				util.OnMCPUpdate(newObj, staticClientSet, status, spec, runningHost)
+				util.CleanUpRunningPods(staticClientSet, spec, status, runningHost)
+			},
+		})
+		log.Log.Info("Adding add pod events to pod informer")
+		podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(oldObj interface{}) {
+				mux.RLock()
+				defer mux.RUnlock()
+				if !synced {
+					return
+				}
+				util.OnPodAdd(oldObj)
+			},
+			UpdateFunc: func(oldObj interface{}, newObj interface{}) {
+				mux.RLock()
+				defer mux.RUnlock()
+				if !synced {
+					return
+				}
+				util.OnPodUpdate(newObj, spec, status, runningHost, staticClientSet)
+			},
+			DeleteFunc: func(obj interface{}) {
+				mux.RLock()
+				defer mux.RUnlock()
+				if !synced {
+					return
+				}
+				util.OnPodDelete(obj, staticClientSet, spec, status, runningHost)
+			},
+		})
+		nodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				mux.RLock()
+				defer mux.RUnlock()
+				if !synced {
+					return
+				}
+				util.OnNodeUpdate(newObj, spec, status, runningHost)
+			},
+		})
+		policyInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				mux.RLock()
+				defer mux.RUnlock()
+				if !synced {
+					return
+				}
+				util.OnPolicyAdd(obj, spec, status)
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				mux.RLock()
+				defer mux.RUnlock()
+				if !synced {
+					return
+				}
+				util.OnPolicyUpdate(newObj, staticClientSet, spec, status, runningHost)
+			},
+			DeleteFunc: func(obj interface{}) {
+				mux.RLock()
+				defer mux.RUnlock()
+				if !synced {
+					return
+				}
+				util.OnPolicyDelete(obj, spec, status, runningHost)
+			},
+		})
+		coInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				mux.RLock()
+				defer mux.RUnlock()
+				if !synced {
+					return
+				}
+				util.OnCoUpdate(newObj, staticClientSet, spec, runningHost)
+			},
+		})
+		catalogInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				mux.RLock()
+				defer mux.RUnlock()
+				if !synced {
+					return
+				}
+				util.OnCatalogSourceUpdate(newObj, staticClientSet, spec, runningHost)
+			},
+		})
+		nncpInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				mux.RLock()
+				defer mux.RUnlock()
+				if !synced {
+					return
+				}
+				util.OnNNCPUpdate(newObj, staticClientSet, spec, runningHost)
+			},
+		})
+		csvInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				mux.RLock()
+				defer mux.RUnlock()
+				if !synced {
+					return
+				}
+				util.OnCsvUpdate(newObj, staticClientSet, spec, runningHost)
+			},
+		})
+		tpInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				mux.RLock()
+				defer mux.RUnlock()
+				if !synced {
+					return
+				}
+				util.OnTunedProfileUpdate(newObj, spec, runningHost)
+			},
+		})
+
+		// go podInformer.Run(context.Background().Done())
+		if r.InformerCount < 2 {
+			log.Log.Info("Starting dynamic informer factory")
+			nsFactory.Start(ctx.Done())
+			r.InformerCount++
+		}
+		// TO DO:
+		// NNCP, CO, Sub, catalogsource
+		log.Log.Info("Waiting for cache sync")
+		var isSynced bool
+
 		isSynced = cache.WaitForCacheSync(ctx.Done(), podInformer.HasSynced, nodeInformer.HasSynced, mcpInformer.HasSynced, policyInformer.HasSynced, coInformer.HasSynced, nncpInformer.HasSynced, catalogInformer.HasSynced, csvInformer.HasSynced, tpInformer.HasSynced)
+
+		mux.Lock()
+		synced = isSynced
+		mux.Unlock()
+		log.Log.Info("cache sync is completed")
+		if !isSynced {
+			return ctrl.Result{}, fmt.Errorf("failed to sync")
+		}
+		report(ocphealthcheckv1.ConditionTrue, "dynamic informers compiled successfully", nil)
 	}
-	mux.Lock()
-	synced = isSynced
-	mux.Unlock()
-	log.Log.Info("cache sync is completed")
-	if !isSynced {
-		return ctrl.Result{}, fmt.Errorf("failed to sync")
-	}
-	report(ocphealthcheckv1.ConditionTrue, "pod informers compiled successfully", nil)
 	return ctrl.Result{}, nil
 }
 

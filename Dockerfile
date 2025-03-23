@@ -21,6 +21,7 @@ COPY --chown=golanguser:golanguser cmd/main.go cmd/main.go
 COPY --chown=golanguser:golanguser api/ api/
 COPY --chown=golanguser:golanguser internal/controller/ internal/controller/
 COPY --chown=golanguser:golanguser internal/util/ internal/util/
+COPY --chown=golanguser:golanguser internal/hubutil/ internal/hubutil/
 
 # Build
 # the GOARCH has not a default value to allow the binary be built according to the host where the command
@@ -41,6 +42,7 @@ RUN addgroup -S golanggroup && adduser -S golanguser -u 65532 -G golanguser
 RUN chmod 777 /home/golanguser
 WORKDIR /home/golanguser
 COPY --from=builder /home/golanguser/manager .
+USER 65532:65532
 RUN mkdir /home/golanguser/files
 RUN chown -R golanguser:golanguser /home/golanguser/files
 USER 65532:65532
