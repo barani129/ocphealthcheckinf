@@ -3,7 +3,6 @@ package hubutil
 import (
 	"context"
 	"fmt"
-	"slices"
 
 	argoop "github.com/barani129/argocd-operator/api/v1beta1"
 	ocpscanv1 "github.com/barani129/ocphealthcheckinf/api/v1"
@@ -134,12 +133,10 @@ func OnManagedClusterUpdate(clientset *kubernetes.Clientset, spec *ocpscanv1.Ocp
 			return
 		}
 		for _, cond := range mcl.Status.Conditions {
-			if slices.Contains(ocphealthcheckutil.SUCCESSCONDS, cond.Type) {
-				if cond.Status != ocphealthcheckutil.NODEREADYTrue {
-					ocphealthcheckutil.SendEmail("ManagedCluster", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", mcl.Name, "cond"), "faulty", fmt.Sprintf("ManagedCluster %s's condition %s is set to false in cluster %s, please execute <oc get managedcluster %s -o json | jq .status> to validate it", mcl.Name, cond.Type, runningHost, mcl.Name), runningHost, spec)
-				} else {
-					ocphealthcheckutil.SendEmail("ManagedCluster", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", mcl.Name, "cond"), "recovered", fmt.Sprintf("ManagedCluster %s's condition %s is set back to true in cluster %s, please execute <oc get managedcluster %s -o json | jq .status> to validate it", mcl.Name, cond.Type, runningHost, mcl.Name), runningHost, spec)
-				}
+			if cond.Status != ocphealthcheckutil.NODEREADYTrue {
+				ocphealthcheckutil.SendEmail("ManagedCluster", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", mcl.Name, cond.Type), "faulty", fmt.Sprintf("ManagedCluster %s's condition %s is set to false in cluster %s, please execute <oc get managedcluster %s -o json | jq .status> to validate it", mcl.Name, cond.Type, runningHost, mcl.Name), runningHost, spec)
+			} else {
+				ocphealthcheckutil.SendEmail("ManagedCluster", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", mcl.Name, cond.Type), "recovered", fmt.Sprintf("ManagedCluster %s's condition %s is set back to true in cluster %s, please execute <oc get managedcluster %s -o json | jq .status> to validate it", mcl.Name, cond.Type, runningHost, mcl.Name), runningHost, spec)
 			}
 		}
 	}
@@ -155,7 +152,7 @@ func OnArgoUpdate(clientset *kubernetes.Clientset, spec *ocpscanv1.OcpHealthChec
 		if argocd.DeletionTimestamp != nil {
 			return
 		}
-		if argocd.Status.ApplicationController != ocphealthcheckutil.ARGORUNNING || argocd.Status.ApplicationSetController != ocphealthcheckutil.ARGORUNNING || argocd.Status.Phase != ocphealthcheckutil.ARGOAVAILABLE || argocd.Status.Redis != ocphealthcheckutil.ARGORUNNING || argocd.Status.Repo != ocphealthcheckutil.ARGORUNNING || argocd.Status.Server != ocphealthcheckutil.ARGORUNNING || argocd.Status.SSO != ocphealthcheckutil.ARGORUNNING {
+		if argocd.Status.ApplicationController != ocphealthcheckutil.ARGORUNNING || argocd.Status.Phase != ocphealthcheckutil.ARGOAVAILABLE || argocd.Status.Redis != ocphealthcheckutil.ARGORUNNING || argocd.Status.Repo != ocphealthcheckutil.ARGORUNNING || argocd.Status.Server != ocphealthcheckutil.ARGORUNNING || argocd.Status.SSO != ocphealthcheckutil.ARGORUNNING {
 			ocphealthcheckutil.SendEmail("ArgoCD", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", argocd.Name, argocd.Namespace), "faulty", fmt.Sprintf("ArgoCD %s's status condition is either not-running/unavailable in namespace %s of cluster %s, please execute <oc get argocd %s -n %s -o json | jq .status> to validate it", argocd.Name, argocd.Namespace, runningHost, argocd.Name, argocd.Namespace), runningHost, spec)
 		} else {
 			ocphealthcheckutil.SendEmail("ArgoCD", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", argocd.Name, argocd.Namespace), "recovered", fmt.Sprintf("ArgoCD %s's status condition is either not-running/unavailable in namespace %s of cluster %s, please execute <oc get argocd %s -n %s -o json | jq .status> to validate it", argocd.Name, argocd.Namespace, runningHost, argocd.Name, argocd.Namespace), runningHost, spec)
