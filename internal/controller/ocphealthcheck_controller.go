@@ -370,7 +370,6 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				now := metav1.Now()
 				r.InformerTimer = &now
 				go r.factory.Start(r.stopChan)
-				status.LastRunTime = &now
 				report(ocphealthcheckv1.ConditionTrue, "dynamic informers compiled successfully", nil)
 			}
 		} else {
