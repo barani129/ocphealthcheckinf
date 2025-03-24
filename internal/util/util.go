@@ -797,7 +797,7 @@ func CleanUpRunningPods(clientset *kubernetes.Clientset, spec *ocpscanv1.OcpHeal
 
 func OnPodUpdate(newObj interface{}, spec *ocpscanv1.OcpHealthCheckSpec, status *ocpscanv1.OcpHealthCheckStatus, runningHost string, clientset *kubernetes.Clientset) {
 	if !strings.Contains(runningHost, "ospctl") {
-		evnfmHost := "evnfm-reg.npecm.ocp.internal.spark.co.nz"
+		evnfmHost := ""
 		evnfmPort := "443"
 		if err := CheckEVNFMConnectivity(evnfmHost, evnfmPort); err != nil {
 			SendEmail("EVNFM-Connectivity", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", evnfmHost, evnfmPort), "faulty", fmt.Sprintf("EVNFM %s on port %s is unreachable from cluster %s ", evnfmHost, evnfmPort, runningHost), runningHost, spec)
