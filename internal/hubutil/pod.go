@@ -66,7 +66,7 @@ func OnPodUpdate(clientset *kubernetes.Clientset, spec *ocpscanv1.OcpHealthCheck
 							if newCont.RestartCount > 0 {
 								if newCont.LastTerminationState.Terminated != nil && newCont.LastTerminationState.Terminated.ExitCode != 0 && newCont.LastTerminationState.Terminated.FinishedAt.String() != "" {
 									if ocphealthcheckutil.PodLastRestartTimerUp(newCont.LastTerminationState.Terminated.FinishedAt.String()) {
-										ocphealthcheckutil.SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", newPo.Name, newPo.Namespace), "faulty", fmt.Sprintf("pod %s's container %s whic was previously terminate with non exit code 0 is now either running/completed in namespace %s in cluster %s", newPo.Name, newCont.Name, newPo.Namespace, runningHost), runningHost, spec)
+										ocphealthcheckutil.SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", newPo.Name, newPo.Namespace), "faulty", fmt.Sprintf("pod %s's container %s whic was previously terminated with non exit code 0 is now either running/completed in namespace %s in cluster %s", newPo.Name, newCont.Name, newPo.Namespace, runningHost), runningHost, spec)
 									}
 								}
 							}
