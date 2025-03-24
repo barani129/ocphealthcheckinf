@@ -126,11 +126,6 @@ spec:
               healthy:
                 description: Indicates if the target is free of failing resources
                 type: boolean
-              lastRunTime:
-                description: timestamp of last osphealthcheck run, please refer lastSuccessfulRunTime
-                  for successful run time
-                format: date-time
-                type: string
             type: object
         type: object
     served: true
