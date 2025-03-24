@@ -378,6 +378,12 @@ func OnCoUpdate(newObj interface{}, clientset *kubernetes.Clientset, spec *ocpsc
 		return
 	}
 
+	if nodeAffected, err := AllNodeReadiness(clientset); err != nil {
+		return
+	} else if nodeAffected {
+		return
+	}
+
 	for _, cond := range co.Status.Conditions {
 		if cond.Type == "Degraded" {
 			if cond.Status == "True" {
@@ -387,6 +393,26 @@ func OnCoUpdate(newObj interface{}, clientset *kubernetes.Clientset, spec *ocpsc
 			}
 		}
 	}
+}
+
+func AllNodeReadiness(clientset *kubernetes.Clientset) (bool, error) {
+	nodeList, err := clientset.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		return false, err
+	}
+	for _, node := range nodeList.Items {
+		if node.Spec.Unschedulable {
+			return true, nil
+		}
+		for _, cond := range node.Status.Conditions {
+			if cond.Type == NODEREADY {
+				if cond.Status != NODEREADYTrue {
+					return true, nil
+				}
+			}
+		}
+	}
+	return false, nil
 }
 
 func OnNNCPUpdate(newObj interface{}, clientset *kubernetes.Clientset, spec *ocpscanv1.OcpHealthCheckSpec, runningHost string) {
