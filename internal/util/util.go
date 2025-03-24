@@ -174,12 +174,7 @@ func HandleCNString(cn string) string {
 }
 
 func writeFile(filename string, data string) error {
-	fi, err := os.Open(filename)
-	defer fi.Close()
-	if err != nil {
-		return err
-	}
-	err = os.WriteFile(fi.Name(), []byte(data), 0666)
+	err := os.WriteFile(filename, []byte(data), 0666)
 	if err != nil {
 		return err
 	}
@@ -187,12 +182,7 @@ func writeFile(filename string, data string) error {
 }
 
 func ReadFile(filename string) (string, error) {
-	fi, err := os.Open(filename)
-	defer fi.Close()
-	if err != nil {
-		return "", err
-	}
-	data, err := os.ReadFile(fi.Name())
+	data, err := os.ReadFile(filename)
 	if err != nil {
 		return "", err
 	}
@@ -200,8 +190,7 @@ func ReadFile(filename string) (string, error) {
 }
 
 func SendEmailAlert(category string, nodeName string, filename string, spec *ocpscanv1.OcpHealthCheckSpec, alert string) {
-	if fi, err := os.Open(filename); os.IsNotExist(err) {
-		defer fi.Close()
+	if _, err := os.Stat(filename); os.IsNotExist(err) {
 		message := fmt.Sprintf(`/usr/bin/printf '%s\n' "Subject: %s OcpHealthCheck alert from %s" "" "Alert: %s" | /usr/sbin/sendmail -f %s -S %s %s`, "%s", category, nodeName, alert, spec.Email, spec.RelayHost, spec.Email)
 		cmd3 := exec.Command("/bin/bash", "-c", message)
 		err := cmd3.Run()
@@ -539,13 +528,7 @@ func OnPolicyUpdate(newObj interface{}, staticClientSet *kubernetes.Clientset, s
 			SendEmail("Policy-update", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", policy.Name, policy.Namespace), "faulty", fmt.Sprintf("Root policy %s is either non-compliant/disabled in namespace %s in cluster %s, please execute <oc get policy %s -n %s -o json | jq .status> to validate it", policy.Name, policy.Namespace, runningHost, policy.Name, policy.Namespace), runningHost, spec)
 		} else {
 
-			SendEmail("Policy-update", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", policy.Name, "noncomplaint"), "recovered", fmt.Sprintf("Root policy %s which was previously non-compliant/disabled is now compliant/enabled again in namespace %s in cluster %s", policy.Name, policy.Namespace, runningHost), runningHost, spec)
-		}
-	} else {
-		if ns, err := GetChildPolicyObjectNamespace(staticClientSet); err != nil {
-			// ignoring errors
-		} else if len(ns) > 0 {
-			SendEmail("Policy-update", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", policy.Name, "child"), "faulty", fmt.Sprintf("Child policy %s is in progress in namespace %s, pod updates from namespace %s will be paused until CGU update is completed in cluster %s", policy.Name, policy.Namespace, ns[0], runningHost), runningHost, spec)
+			SendEmail("Policy-update", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", policy.Name, policy.Namespace), "recovered", fmt.Sprintf("Root policy %s which was previously non-compliant/disabled is now compliant/enabled again in namespace %s in cluster %s", policy.Name, policy.Namespace, runningHost), runningHost, spec)
 		}
 	}
 }
@@ -795,9 +778,7 @@ func PodLastRestartTimerUp(timeStr string) bool {
 }
 
 func CleanUpRunningPods(clientset *kubernetes.Clientset, spec *ocpscanv1.OcpHealthCheckSpec, status *ocpscanv1.OcpHealthCheckStatus, runningHost string) {
-	// log.Log.Info("Running garbage collection")
-	// pkruntime.GC()
-	// log.Log.Info("Completed garbage collection")
+
 	podList, err := clientset.CoreV1().Pods(corev1.NamespaceAll).List(context.Background(), metav1.ListOptions{})
 	if err != nil {
 		log.Log.Info(fmt.Sprintf("unable to retrieve pods due to error %s", err.Error()))
@@ -837,15 +818,18 @@ func CleanUpRunningPods(clientset *kubernetes.Clientset, spec *ocpscanv1.OcpHeal
 }
 
 func OnPodUpdate(newObj interface{}, spec *ocpscanv1.OcpHealthCheckSpec, status *ocpscanv1.OcpHealthCheckStatus, runningHost string, clientset *kubernetes.Clientset) {
-	if !strings.Contains(runningHost, "ospctl") {
-		evnfmHost := ""
-		evnfmPort := "443"
-		if err := CheckEVNFMConnectivity(evnfmHost, evnfmPort); err != nil {
-			SendEmail("EVNFM-Connectivity", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", evnfmHost, evnfmPort), "faulty", fmt.Sprintf("EVNFM %s on port %s is unreachable from cluster %s ", evnfmHost, evnfmPort, runningHost), runningHost, spec)
-		} else {
-			SendEmail("EVNFM-Connectivity", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", evnfmHost, evnfmPort), "recovered", fmt.Sprintf("EVNFM %s on port %s is now reachable again from cluster %s ", evnfmHost, evnfmPort, runningHost), runningHost, spec)
-		}
-	}
+	// log.Log.Info("Running garbage collection")
+	// pkruntime.GC()
+	// log.Log.Info("Completed garbage collection")
+	// if !strings.Contains(runningHost, "ospctl") {
+	// 	evnfmHost := ""
+	// 	evnfmPort := "443"
+	// 	if err := CheckEVNFMConnectivity(evnfmHost, evnfmPort); err != nil {
+	// 		SendEmail("EVNFM-Connectivity", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "evnfm", evnfmPort), "faulty", fmt.Sprintf("EVNFM %s on port %s is unreachable from cluster %s ", evnfmHost, evnfmPort, runningHost), runningHost, spec)
+	// 	} else {
+	// 		SendEmail("EVNFM-Connectivity", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "evnfm", evnfmPort), "recovered", fmt.Sprintf("EVNFM %s on port %s is now reachable again from cluster %s ", evnfmHost, evnfmPort, runningHost), runningHost, spec)
+	// 	}
+	// }
 	newPo := new(corev1.Pod)
 	err := ConvertUnStructureToStructured(newObj, newPo)
 	if err != nil {
