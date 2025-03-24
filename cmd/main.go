@@ -24,12 +24,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	monitoringv1 "github.com/barani129/ocphealthcheckinf/api/v1"
+	"github.com/barani129/ocphealthcheckinf/internal/controller"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
@@ -42,9 +43,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
-
-	monitoringv1 "github.com/barani129/ocphealthcheckinf/api/v1"
-	"github.com/barani129/ocphealthcheckinf/internal/controller"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -240,8 +238,7 @@ func main() {
 	if err != nil {
 		setupLog.Error(err, "unable to create REST interface")
 	}
-	startTime := time.Now()
-	a := false
+
 	if err = (&controller.OcpHealthCheckReconciler{
 		Client:                   mgr.GetClient(),
 		Kind:                     "OcpHealthCheck",
@@ -250,8 +247,6 @@ func main() {
 		RESTConfig:               mgr.GetConfig(),
 		ClusterResourceNamespace: clusterResourceNamespace,
 		InformerCount:            int64(1),
-		InformerStartTime:        startTime,
-		InformerStarted:          &a,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "OcpHealthCheck")
 		os.Exit(1)
