@@ -174,7 +174,12 @@ func HandleCNString(cn string) string {
 }
 
 func writeFile(filename string, data string) error {
-	err := os.WriteFile(filename, []byte(data), 0666)
+	fi, err := os.Open(filename)
+	defer fi.Close()
+	if err != nil {
+		return err
+	}
+	err = os.WriteFile(fi.Name(), []byte(data), 0666)
 	if err != nil {
 		return err
 	}
@@ -182,7 +187,12 @@ func writeFile(filename string, data string) error {
 }
 
 func ReadFile(filename string) (string, error) {
-	data, err := os.ReadFile(filename)
+	fi, err := os.Open(filename)
+	defer fi.Close()
+	if err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(fi.Name())
 	if err != nil {
 		return "", err
 	}
@@ -190,7 +200,8 @@ func ReadFile(filename string) (string, error) {
 }
 
 func SendEmailAlert(category string, nodeName string, filename string, spec *ocpscanv1.OcpHealthCheckSpec, alert string) {
-	if _, err := os.Stat(filename); os.IsNotExist(err) {
+	if fi, err := os.Open(filename); os.IsNotExist(err) {
+		defer fi.Close()
 		message := fmt.Sprintf(`/usr/bin/printf '%s\n' "Subject: %s OcpHealthCheck alert from %s" "" "Alert: %s" | /usr/sbin/sendmail -f %s -S %s %s`, "%s", category, nodeName, alert, spec.Email, spec.RelayHost, spec.Email)
 		cmd3 := exec.Command("/bin/bash", "-c", message)
 		err := cmd3.Run()
@@ -784,6 +795,9 @@ func PodLastRestartTimerUp(timeStr string) bool {
 }
 
 func CleanUpRunningPods(clientset *kubernetes.Clientset, spec *ocpscanv1.OcpHealthCheckSpec, status *ocpscanv1.OcpHealthCheckStatus, runningHost string) {
+	// log.Log.Info("Running garbage collection")
+	// pkruntime.GC()
+	// log.Log.Info("Completed garbage collection")
 	podList, err := clientset.CoreV1().Pods(corev1.NamespaceAll).List(context.Background(), metav1.ListOptions{})
 	if err != nil {
 		log.Log.Info(fmt.Sprintf("unable to retrieve pods due to error %s", err.Error()))
@@ -819,6 +833,7 @@ func CleanUpRunningPods(clientset *kubernetes.Clientset, spec *ocpscanv1.OcpHeal
 			status.Healthy = false
 		}
 	}
+
 }
 
 func OnPodUpdate(newObj interface{}, spec *ocpscanv1.OcpHealthCheckSpec, status *ocpscanv1.OcpHealthCheckStatus, runningHost string, clientset *kubernetes.Clientset) {
@@ -942,6 +957,7 @@ func OnPodUpdate(newObj interface{}, spec *ocpscanv1.OcpHealthCheckSpec, status 
 			}
 		}
 	}
+
 }
 
 func CheckEVNFMConnectivity(host string, port string) error {

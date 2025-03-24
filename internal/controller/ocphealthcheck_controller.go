@@ -276,7 +276,6 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		catalogInformer := nsFactory.ForResource(catalogResource).Informer()
 		csvInformer := nsFactory.ForResource(csvResource).Informer()
 		tpInformer := nsFactory.ForResource(tpResource).Informer()
-
 		mux := &sync.RWMutex{}
 		synced := false
 		// logic for mcp handling: check if mcp is in progress, if in progress, fetch the node based on labels
@@ -407,13 +406,11 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				util.OnTunedProfileUpdate(newObj, spec, runningHost)
 			},
 		})
-
 		// go podInformer.Run(context.Background().Done())
-		if r.InformerCount < 2 {
-			log.Log.Info("Starting dynamic informer factory")
-			nsFactory.Start(ctx.Done())
-			r.InformerCount++
-		}
+
+		log.Log.Info("Starting dynamic informer factory")
+		nsFactory.Start(ctx.Done())
+		// r.InformerCount++
 		// TO DO:
 		// NNCP, CO, Sub, catalogsource
 		log.Log.Info("Waiting for cache sync")
@@ -429,8 +426,9 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, fmt.Errorf("failed to sync")
 		}
 		report(ocphealthcheckv1.ConditionTrue, "dynamic informers compiled successfully", nil)
+		return ctrl.Result{RequeueAfter: time.Minute * 30}, nil
 	}
-	return ctrl.Result{}, nil
+
 }
 
 // SetupWithManager sets up the controller with the Manager.
