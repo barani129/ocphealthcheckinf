@@ -75,6 +75,10 @@ type OcpHealthCheckStatus struct {
 	// Indicates if the target is free of failing resources
 	// +optional
 	Healthy bool `json:"healthy,omitempty"`
+
+	// timestamp of last osphealthcheck run, please refer lastSuccessfulRunTime for successful run time
+	// +optional
+	LastRunTime *metav1.Time `json:"lastRunTime,omitempty"`
 }
 
 // +kubebuilder:object:root=true

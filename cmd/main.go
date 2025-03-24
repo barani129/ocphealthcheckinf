@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -239,7 +240,8 @@ func main() {
 	if err != nil {
 		setupLog.Error(err, "unable to create REST interface")
 	}
-
+	startTime := time.Now()
+	a := false
 	if err = (&controller.OcpHealthCheckReconciler{
 		Client:                   mgr.GetClient(),
 		Kind:                     "OcpHealthCheck",
@@ -248,6 +250,8 @@ func main() {
 		RESTConfig:               mgr.GetConfig(),
 		ClusterResourceNamespace: clusterResourceNamespace,
 		InformerCount:            int64(1),
+		InformerStartTime:        startTime,
+		InformerStarted:          &a,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "OcpHealthCheck")
 		os.Exit(1)

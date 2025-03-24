@@ -22,10 +22,13 @@ import (
 	"sync"
 	"time"
 
+	gcruntime "runtime"
+
 	ocphealthcheckv1 "github.com/barani129/ocphealthcheckinf/api/v1"
 	"github.com/barani129/ocphealthcheckinf/internal/hubutil"
 	"github.com/barani129/ocphealthcheckinf/internal/util"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -50,6 +53,8 @@ type OcpHealthCheckReconciler struct {
 	recorder                 record.EventRecorder
 	Scheme                   *runtime.Scheme
 	InformerCount            int64
+	InformerStartTime        time.Time
+	InformerStarted          *bool
 }
 
 func (r *OcpHealthCheckReconciler) newOcpHealthChecker() (client.Object, error) {
@@ -210,10 +215,6 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		report(ocphealthcheckv1.ConditionTrue, "hub healthcheck functions compiled successfully", nil)
 		return ctrl.Result{Requeue: true}, nil
 	} else {
-		clientset, err := dynamic.NewForConfig(config)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
 		podResource := schema.GroupVersionResource{
 			Group:    "",
 			Version:  "v1",
@@ -265,6 +266,10 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			Group:    "tuned.openshift.io",
 			Version:  "v1",
 			Resource: "profiles",
+		}
+		clientset, err := dynamic.NewForConfig(config)
+		if err != nil {
+			return ctrl.Result{}, err
 		}
 		nsFactory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(clientset, time.Hour*10, corev1.NamespaceAll, nil)
 		mcpInformer := nsFactory.ForResource(mcpResource).Informer()
@@ -406,29 +411,52 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				util.OnTunedProfileUpdate(newObj, spec, runningHost)
 			},
 		})
-		// go podInformer.Run(context.Background().Done())
+		if status.LastRunTime == nil {
+			log.Log.Info("Starting dynamic informer factory")
+			nsFactory.Start(ctx.Done())
+			log.Log.Info("Waiting for cache sync")
+			var isSynced bool
 
-		log.Log.Info("Starting dynamic informer factory")
-		nsFactory.Start(ctx.Done())
-		// r.InformerCount++
-		// TO DO:
-		// NNCP, CO, Sub, catalogsource
-		log.Log.Info("Waiting for cache sync")
-		var isSynced bool
+			isSynced = cache.WaitForCacheSync(ctx.Done(), podInformer.HasSynced, nodeInformer.HasSynced, mcpInformer.HasSynced, policyInformer.HasSynced, coInformer.HasSynced, nncpInformer.HasSynced, catalogInformer.HasSynced, csvInformer.HasSynced, tpInformer.HasSynced)
 
-		isSynced = cache.WaitForCacheSync(ctx.Done(), podInformer.HasSynced, nodeInformer.HasSynced, mcpInformer.HasSynced, policyInformer.HasSynced, coInformer.HasSynced, nncpInformer.HasSynced, catalogInformer.HasSynced, csvInformer.HasSynced, tpInformer.HasSynced)
+			mux.Lock()
+			synced = isSynced
+			mux.Unlock()
+			log.Log.Info("cache sync is completed")
+			if !isSynced {
+				return ctrl.Result{}, fmt.Errorf("failed to sync")
+			}
+			report(ocphealthcheckv1.ConditionTrue, "dynamic informers compiled successfully", nil)
+			now := metav1.Now()
+			status.LastRunTime = &now
+		} else {
+			pastTime := time.Now().Add(-1 * time.Minute * 3)
+			timeDiff := status.LastRunTime.Time.Before(pastTime)
+			if timeDiff {
+				log.Log.Info("Running garbage collection")
+				gcruntime.GC()
+				log.Log.Info("Starting dynamic informer factory")
+				nsFactory.Start(ctx.Done())
+				log.Log.Info("Waiting for cache sync")
+				var isSynced bool
 
-		mux.Lock()
-		synced = isSynced
-		mux.Unlock()
-		log.Log.Info("cache sync is completed")
-		if !isSynced {
-			return ctrl.Result{}, fmt.Errorf("failed to sync")
+				isSynced = cache.WaitForCacheSync(ctx.Done(), podInformer.HasSynced, nodeInformer.HasSynced, mcpInformer.HasSynced, policyInformer.HasSynced, coInformer.HasSynced, nncpInformer.HasSynced, catalogInformer.HasSynced, csvInformer.HasSynced, tpInformer.HasSynced)
+
+				mux.Lock()
+				synced = isSynced
+				mux.Unlock()
+				log.Log.Info("cache sync is completed")
+				if !isSynced {
+					return ctrl.Result{}, fmt.Errorf("failed to sync")
+				}
+				report(ocphealthcheckv1.ConditionTrue, "dynamic informers compiled successfully", nil)
+				now := metav1.Now()
+				status.LastRunTime = &now
+			}
 		}
-		report(ocphealthcheckv1.ConditionTrue, "dynamic informers compiled successfully", nil)
-		return ctrl.Result{RequeueAfter: time.Minute * 30}, nil
-	}
 
+	}
+	return ctrl.Result{RequeueAfter: time.Minute * 3}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
