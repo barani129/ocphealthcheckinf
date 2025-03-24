@@ -907,6 +907,23 @@ func OnPodUpdate(newObj interface{}, spec *ocpscanv1.OcpHealthCheckSpec, status 
 			}
 		}
 	}
+	evnfmHost := "evnfm-reg.npecm.ocp.internal.spark.co.nz"
+	evnfmPort := "443"
+	if err := CheckEVNFMConnectivity(evnfmHost, evnfmPort); err != nil {
+		SendEmail("EVNFM-Connectivity", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", evnfmHost, evnfmPort), "faulty", fmt.Sprintf("EVNFM %s on port %s is unreachable from cluster %s ", evnfmHost, evnfmPort, runningHost), runningHost, spec)
+	} else {
+		SendEmail("EVNFM-Connectivity", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", evnfmHost, evnfmPort), "recovered", fmt.Sprintf("EVNFM %s on port %s is now reachable again from cluster %s ", evnfmHost, evnfmPort, runningHost), runningHost, spec)
+	}
+}
+
+func CheckEVNFMConnectivity(host string, port string) error {
+	command := fmt.Sprintf("/usr/bin/nc -w 3 -zv %s %s", host, port)
+	cmd := exec.Command("/bin/bash", "-c", command)
+	err := cmd.Run()
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Hub functions
