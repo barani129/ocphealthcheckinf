@@ -818,18 +818,15 @@ func CleanUpRunningPods(clientset *kubernetes.Clientset, spec *ocpscanv1.OcpHeal
 }
 
 func OnPodUpdate(newObj interface{}, spec *ocpscanv1.OcpHealthCheckSpec, status *ocpscanv1.OcpHealthCheckStatus, runningHost string, clientset *kubernetes.Clientset) {
-	// log.Log.Info("Running garbage collection")
-	// pkruntime.GC()
-	// log.Log.Info("Completed garbage collection")
-	// if !strings.Contains(runningHost, "ospctl") {
-	// 	evnfmHost := ""
-	// 	evnfmPort := "443"
-	// 	if err := CheckEVNFMConnectivity(evnfmHost, evnfmPort); err != nil {
-	// 		SendEmail("EVNFM-Connectivity", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "evnfm", evnfmPort), "faulty", fmt.Sprintf("EVNFM %s on port %s is unreachable from cluster %s ", evnfmHost, evnfmPort, runningHost), runningHost, spec)
-	// 	} else {
-	// 		SendEmail("EVNFM-Connectivity", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "evnfm", evnfmPort), "recovered", fmt.Sprintf("EVNFM %s on port %s is now reachable again from cluster %s ", evnfmHost, evnfmPort, runningHost), runningHost, spec)
-	// 	}
-	// }
+	if !strings.Contains(runningHost, "ospctl") {
+		evnfmHost := ""
+		evnfmPort := "443"
+		if err := CheckEVNFMConnectivity(evnfmHost, evnfmPort); err != nil {
+			SendEmail("EVNFM-Connectivity", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "evnfm", evnfmPort), "faulty", fmt.Sprintf("EVNFM %s on port %s is unreachable from cluster %s ", evnfmHost, evnfmPort, runningHost), runningHost, spec)
+		} else {
+			SendEmail("EVNFM-Connectivity", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "evnfm", evnfmPort), "recovered", fmt.Sprintf("EVNFM %s on port %s is now reachable again from cluster %s ", evnfmHost, evnfmPort, runningHost), runningHost, spec)
+		}
+	}
 	newPo := new(corev1.Pod)
 	err := ConvertUnStructureToStructured(newObj, newPo)
 	if err != nil {
@@ -941,7 +938,6 @@ func OnPodUpdate(newObj interface{}, spec *ocpscanv1.OcpHealthCheckSpec, status 
 			}
 		}
 	}
-
 }
 
 func CheckEVNFMConnectivity(host string, port string) error {
