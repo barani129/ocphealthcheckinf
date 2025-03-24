@@ -266,7 +266,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			Version:  "v1",
 			Resource: "profiles",
 		}
-		nsFactory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(clientset, time.Minute*10, corev1.NamespaceAll, nil)
+		nsFactory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(clientset, time.Hour*10, corev1.NamespaceAll, nil)
 		mcpInformer := nsFactory.ForResource(mcpResource).Informer()
 		podInformer := nsFactory.ForResource(podResource).Informer()
 		nodeInformer := nsFactory.ForResource(nodeResource).Informer()
