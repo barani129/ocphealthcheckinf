@@ -818,15 +818,7 @@ func CleanUpRunningPods(clientset *kubernetes.Clientset, spec *ocpscanv1.OcpHeal
 }
 
 func OnPodUpdate(newObj interface{}, spec *ocpscanv1.OcpHealthCheckSpec, status *ocpscanv1.OcpHealthCheckStatus, runningHost string, clientset *kubernetes.Clientset) {
-	if !strings.Contains(runningHost, "ospctl") {
-		evnfmHost := ""
-		evnfmPort := "443"
-		if err := CheckEVNFMConnectivity(evnfmHost, evnfmPort); err != nil {
-			SendEmail("EVNFM-Connectivity", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "evnfm", evnfmPort), "faulty", fmt.Sprintf("EVNFM %s on port %s is unreachable from cluster %s ", evnfmHost, evnfmPort, runningHost), runningHost, spec)
-		} else {
-			SendEmail("EVNFM-Connectivity", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "evnfm", evnfmPort), "recovered", fmt.Sprintf("EVNFM %s on port %s is now reachable again from cluster %s ", evnfmHost, evnfmPort, runningHost), runningHost, spec)
-		}
-	}
+
 	newPo := new(corev1.Pod)
 	err := ConvertUnStructureToStructured(newObj, newPo)
 	if err != nil {
@@ -837,6 +829,17 @@ func OnPodUpdate(newObj interface{}, spec *ocpscanv1.OcpHealthCheckSpec, status 
 		// assuming it is deletion, so ignoring
 		return
 	}
+
+	if !strings.Contains(runningHost, "ospctl") {
+		evnfmHost := ""
+		evnfmPort := "443"
+		if err := CheckEVNFMConnectivity(evnfmHost, evnfmPort); err != nil {
+			SendEmail("EVNFM-Connectivity", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "evnfm", evnfmPort), "faulty", fmt.Sprintf("EVNFM %s on port %s is unreachable from cluster %s ", evnfmHost, evnfmPort, runningHost), runningHost, spec)
+		} else {
+			SendEmail("EVNFM-Connectivity", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "evnfm", evnfmPort), "recovered", fmt.Sprintf("EVNFM %s on port %s is now reachable again from cluster %s ", evnfmHost, evnfmPort, runningHost), runningHost, spec)
+		}
+	}
+
 	if mcp, err := CheckMCPINProgress(clientset); err != nil {
 		log.Log.Info("unable to retrieve MCP progress")
 		return
@@ -864,13 +867,13 @@ func OnPodUpdate(newObj interface{}, spec *ocpscanv1.OcpHealthCheckSpec, status 
 
 	for _, newCont := range newPo.Status.ContainerStatuses {
 		if newCont.State.Terminated != nil && newCont.State.Terminated.ExitCode != 0 {
-			SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("pod %s's container %s is terminated with non exit code 0 in namespace %s in cluster %s", newPo.Name, newCont.Name, newPo.Namespace, runningHost), runningHost, spec)
+			SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("pod %s's container %s is terminated with exit code %s (reason %s) in namespace %s in cluster %s", newPo.Name, newCont.Name, newCont.LastTerminationState.Terminated.ExitCode, newCont.LastTerminationState.Terminated.Reason, newPo.Namespace, runningHost), runningHost, spec)
 		} else if newCont.State.Running != nil || (newCont.State.Terminated != nil && newCont.State.Terminated.ExitCode == 0) {
 			// Assuming if pod has moved back to running from CrashLoopBackOff/others, the restart count will always be greater than 0
 			if newCont.RestartCount > 0 {
 				if newCont.LastTerminationState.Terminated != nil && newCont.LastTerminationState.Terminated.ExitCode != 0 && newCont.LastTerminationState.Terminated.FinishedAt.String() != "" {
 					if PodLastRestartTimerUp(newCont.LastTerminationState.Terminated.FinishedAt.String()) {
-						SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("pod %s's container %s whic was previously terminate with non exit code 0 is now either running/completed in namespace %s in cluster %s", newPo.Name, newCont.Name, newPo.Namespace, runningHost), runningHost, spec)
+						SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "recovered", fmt.Sprintf("pod %s's container %s whic was previously terminated with non exit code 0 is now either running/completed in namespace %s in cluster %s", newPo.Name, newCont.Name, newPo.Namespace, runningHost), runningHost, spec)
 					}
 				}
 			}
