@@ -61,6 +61,10 @@ type OcpHealthCheckSpec struct {
 	// Runs extra healthchecks about managed clusters
 	// +optional
 	HubCluster *bool `json:"hubCluster,omitempty"`
+
+	// Target FQDN of EVNFM cluster to check for connectivity on port 443 from the hosted cluster
+	// +optional
+	EvnfmFQDN string `json:"evnfmFQDN,omitempty"`
 }
 
 // OcpHealthCheckStatus defines the observed state of OcpHealthCheck.

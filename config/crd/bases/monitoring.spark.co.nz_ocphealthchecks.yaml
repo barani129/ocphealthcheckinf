@@ -66,6 +66,10 @@ spec:
               email:
                 description: Target user's email for container status notification
                 type: string
+              evnfmFQDN:
+                description: Target FQDN of EVNFM cluster to check for connectivity
+                  on port 443 from the hosted cluster
+                type: string
               hubCluster:
                 description: |-
                   Identifies if the openshift cluster is being used as hub for other clusters

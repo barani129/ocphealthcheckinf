@@ -57,6 +57,7 @@ const (
 	TUNEDAPPLIED                      = "Applied"
 	READYUC                           = "READY"
 	SUCCEEDED                         = "Succeeded"
+	EVNFMPORT                         = "443"
 )
 
 var (
@@ -830,13 +831,11 @@ func OnPodUpdate(newObj interface{}, spec *ocpscanv1.OcpHealthCheckSpec, status 
 		return
 	}
 
-	if !strings.Contains(runningHost, "ospctl") {
-		evnfmHost := ""
-		evnfmPort := "443"
-		if err := CheckEVNFMConnectivity(evnfmHost, evnfmPort); err != nil {
-			SendEmail("EVNFM-Connectivity", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "evnfm", evnfmPort), "faulty", fmt.Sprintf("EVNFM %s on port %s is unreachable from cluster %s ", evnfmHost, evnfmPort, runningHost), runningHost, spec)
+	if !strings.Contains(runningHost, "ospctl") && spec.EvnfmFQDN != "" {
+		if err := CheckEVNFMConnectivity(spec.EvnfmFQDN, EVNFMPORT); err != nil {
+			SendEmail("EVNFM-Connectivity", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "evnfm", EVNFMPORT), "faulty", fmt.Sprintf("EVNFM %s on port %s is unreachable from cluster %s ", spec.EvnfmFQDN, EVNFMPORT, runningHost), runningHost, spec)
 		} else {
-			SendEmail("EVNFM-Connectivity", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "evnfm", evnfmPort), "recovered", fmt.Sprintf("EVNFM %s on port %s is now reachable again from cluster %s ", evnfmHost, evnfmPort, runningHost), runningHost, spec)
+			SendEmail("EVNFM-Connectivity", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "evnfm", EVNFMPORT), "recovered", fmt.Sprintf("EVNFM %s on port %s is now reachable again from cluster %s ", spec.EvnfmFQDN, EVNFMPORT, runningHost), runningHost, spec)
 		}
 	}
 
