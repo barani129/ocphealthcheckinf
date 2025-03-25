@@ -867,7 +867,7 @@ func OnPodUpdate(newObj interface{}, spec *ocpscanv1.OcpHealthCheckSpec, status 
 
 	for _, newCont := range newPo.Status.ContainerStatuses {
 		if newCont.State.Terminated != nil && newCont.State.Terminated.ExitCode != 0 {
-			SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("pod %s's container %s is terminated with exit code %s (reason %s) in namespace %s in cluster %s", newPo.Name, newCont.Name, newCont.LastTerminationState.Terminated.ExitCode, newCont.LastTerminationState.Terminated.Reason, newPo.Namespace, runningHost), runningHost, spec)
+			SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("pod %s's container %s is terminated with exit code %d (reason %s) in namespace %s in cluster %s", newPo.Name, newCont.Name, newCont.LastTerminationState.Terminated.ExitCode, newCont.LastTerminationState.Terminated.Reason, newPo.Namespace, runningHost), runningHost, spec)
 		} else if newCont.State.Running != nil || (newCont.State.Terminated != nil && newCont.State.Terminated.ExitCode == 0) {
 			// Assuming if pod has moved back to running from CrashLoopBackOff/others, the restart count will always be greater than 0
 			if newCont.RestartCount > 0 {
