@@ -66,6 +66,7 @@ type OcpHealthCheckReconciler struct {
 	CsvInformer              cache.SharedIndexInformer
 	TunedInformer            cache.SharedIndexInformer
 	stopChan                 chan struct{}
+	podCleaner               *metav1.Time
 }
 
 func (r *OcpHealthCheckReconciler) newOcpHealthChecker() (client.Object, error) {
@@ -285,6 +286,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		pastTime := time.Now().Add(-1 * time.Minute * 3)
+		podCleanupTime := time.Now().Add(-1 * time.Hour * 1)
 		if r.factory != nil {
 			if r.InformerTimer != nil && r.InformerTimer.Time.Before(pastTime) {
 				log.Log.Info("closing the factory")
@@ -316,7 +318,6 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				r.MCPInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 					UpdateFunc: func(oldObj, newObj interface{}) {
 						util.OnMCPUpdate(newObj, staticClientSet, status, spec, runningHost)
-						util.CleanUpRunningPods(staticClientSet, spec, status, runningHost)
 					},
 				})
 				log.Log.Info("Adding add pod events to pod informer")
@@ -371,6 +372,13 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				r.InformerTimer = &now
 				go r.factory.Start(r.stopChan)
 				report(ocphealthcheckv1.ConditionTrue, "dynamic informers compiled successfully", nil)
+				if r.podCleaner.Time.Before(podCleanupTime) {
+					log.Log.Info("Running pod files cleanup")
+					util.CleanUpRunningPods(staticClientSet, spec, status, runningHost)
+					log.Log.Info("Completed pod files cleanup")
+					now := metav1.Now()
+					r.podCleaner = &now
+				}
 			}
 		} else {
 			r.stopChan = make(chan struct{})
@@ -388,7 +396,6 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			r.MCPInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 				UpdateFunc: func(oldObj, newObj interface{}) {
 					util.OnMCPUpdate(newObj, staticClientSet, status, spec, runningHost)
-					util.CleanUpRunningPods(staticClientSet, spec, status, runningHost)
 				},
 			})
 			log.Log.Info("Adding add pod events to pod informer")
@@ -441,9 +448,9 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			log.Log.Info("Starting dynamic informer factory")
 			now := metav1.Now()
 			r.InformerTimer = &now
+			r.podCleaner = &now
 			go r.factory.Start(r.stopChan)
 			report(ocphealthcheckv1.ConditionTrue, "dynamic informers compiled successfully", nil)
-			return ctrl.Result{Requeue: true}, nil
 		}
 		return ctrl.Result{Requeue: true}, nil
 	}
