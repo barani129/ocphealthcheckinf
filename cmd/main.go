@@ -306,7 +306,6 @@ func CreateDirs() error {
 		dirName := fmt.Sprintf("/home/golanguser/files/%s", path)
 		if _, err := os.ReadDir(dirName); err != nil {
 			if os.IsNotExist(err) {
-				fmt.Println("Creating sub directories for log files")
 				err := os.Mkdir(dirName, 0775)
 				if err != nil {
 					return err
