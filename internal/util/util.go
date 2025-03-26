@@ -754,7 +754,16 @@ func OnPodDelete(oldObj interface{}, clientset *kubernetes.Clientset, spec *ocps
 	} else if err == nil && mcp {
 		return
 	}
-	SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", po.Name, po.Namespace), "recovered", fmt.Sprintf("pod %s's container which was previously terminated/CrashLoopBackOff is now deleted in namespace %s in cluster %s ", po.Name, po.Namespace, runningHost), runningHost, spec)
+	files, err := os.ReadDir("/home/golanguser/files/ocphealth/")
+	if err != nil {
+		return
+	}
+	for _, file := range files {
+		if strings.Contains(file.Name(), po.Name) && strings.Contains(file.Name(), po.Namespace) {
+			SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/%s", file.Name()), "recovered", fmt.Sprintf("pod %s's container which was previously terminated/CrashLoopBackOff is now deleted in namespace %s in cluster %s ", po.Name, po.Namespace, runningHost), runningHost, spec)
+		}
+	}
+
 }
 
 func OnPodAdd(oldObj interface{}) {
@@ -790,20 +799,23 @@ func CleanUpRunningPods(clientset *kubernetes.Clientset, spec *ocpscanv1.OcpHeal
 		for _, file := range files {
 			if len(podList.Items) > 0 {
 				for _, pod := range podList.Items {
-					if strings.Contains(file.Name(), fmt.Sprintf(".%s-%s.txt", pod.Name, pod.Namespace)) {
-						for _, cont := range pod.Status.ContainerStatuses {
-							if cont.State.Running != nil || (cont.State.Terminated != nil && cont.State.Terminated.ExitCode == 0) {
-								if cont.RestartCount > 0 {
-									if PodLastRestartTimerUp(cont.LastTerminationState.Terminated.FinishedAt.String()) {
-										SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", pod.Name, pod.Namespace), "recovered", fmt.Sprintf("pod %s which was previously waiting/terminated with non exit code 0 is now either running/completed in namespace %s in cluster %s ", pod.Name, pod.Namespace, runningHost), runningHost, spec)
+					for _, cont := range pod.Spec.Containers {
+						if strings.Contains(file.Name(), fmt.Sprintf(".%s-%s-%s.txt", pod.Name, cont.Name, pod.Namespace)) {
+							for _, cont := range pod.Status.ContainerStatuses {
+								if cont.State.Running != nil || (cont.State.Terminated != nil && cont.State.Terminated.ExitCode == 0) {
+									if cont.RestartCount > 0 {
+										if PodLastRestartTimerUp(cont.LastTerminationState.Terminated.FinishedAt.String()) {
+											SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", pod.Name, cont.Name, pod.Namespace), "recovered", fmt.Sprintf("pod %s's container %s which was previously waiting/terminated with non exit code 0 is now either running/completed in namespace %s in cluster %s ", pod.Name, cont.Name, pod.Namespace, runningHost), runningHost, spec)
+										}
+									} else {
+										SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", pod.Name, cont.Name, pod.Namespace), "recovered", fmt.Sprintf("pod %s's container %s which was previously waiting/terminated with non exit code 0 is now either running/completed in namespace %s in cluster %s ", pod.Name, cont.Name, pod.Namespace, runningHost), runningHost, spec)
 									}
-								} else {
-									SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", pod.Name, pod.Namespace), "recovered", fmt.Sprintf("pod %s which was previously waiting/terminated with non exit code 0 is now either running/completed in namespace %s in cluster %s ", pod.Name, pod.Namespace, runningHost), runningHost, spec)
-								}
 
+								}
 							}
 						}
 					}
+
 				}
 			}
 		}
