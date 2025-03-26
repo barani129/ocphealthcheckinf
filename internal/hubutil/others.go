@@ -172,9 +172,9 @@ func OnTunedProfileUpdate(clientset *kubernetes.Clientset, spec *ocpscanv1.OcpHe
 		}
 		for _, cond := range tp.Status.Conditions {
 			if (cond.Type == ocphealthcheckutil.TUNEDAPPLIED && cond.Status == ocphealthcheckutil.NODEREADYFalse) || (cond.Type == ocphealthcheckutil.MACHINECONFIGUPDATEDEGRADED && cond.Status == ocphealthcheckutil.NODEREADYTrue) {
-				ocphealthcheckutil.SendEmail("TunedProfile", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "tuned-profile", tp.Name), "faulty", fmt.Sprintf("TunedProfile %s's status condition in node %s is either degraded or not-applied in cluster %s, please execute <oc get profiles.tuned.openshift.io %s -n %s -o json | jq .status> to validate it", tp.Status.TunedProfile, tp.Name, runningHost, tp.Name, tp.Namespace), runningHost, spec)
+				ocphealthcheckutil.SendEmail("TunedProfile", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", tp.Name, tp.Namespace), "faulty", fmt.Sprintf("TunedProfile %s's status condition in node %s is either degraded or not-applied in cluster %s, please execute <oc get profiles.tuned.openshift.io %s -n %s -o json | jq .status> to validate it", tp.Status.TunedProfile, tp.Name, runningHost, tp.Name, tp.Namespace), runningHost, spec)
 			} else {
-				ocphealthcheckutil.SendEmail("TunedProfile", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "tuned-profile", tp.Name), "recovered", fmt.Sprintf("TunedProfile %s's status condition in node %s is recovered in cluster %s, please execute <oc get tunedprofile %s -n %s -o json | jq .status> to validate it", tp.Status.TunedProfile, tp.Name, runningHost, tp.Name, tp.Namespace), runningHost, spec)
+				ocphealthcheckutil.SendEmail("TunedProfile", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", tp.Name, tp.Namespace), "recovered", fmt.Sprintf("TunedProfile %s's status condition in node %s is recovered in cluster %s, please execute <oc get tunedprofile %s -n %s -o json | jq .status> to validate it", tp.Status.TunedProfile, tp.Name, runningHost, tp.Name, tp.Namespace), runningHost, spec)
 			}
 		}
 	}
