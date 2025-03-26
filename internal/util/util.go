@@ -644,20 +644,18 @@ func OnMCPUpdate(newObj interface{}, staticClientSet *kubernetes.Clientset, stat
 		if cond.Type == MCPUpdating {
 			if cond.Status == NODEREADYTrue {
 				// Check node annotations to validate it
-				if mcp.Spec.MachineConfigSelector.MatchLabels != nil {
+				if mcp.Spec.NodeSelector.MatchLabels != nil {
 					if isMcPInProgress, node, err := CheckNodeMcpAnnotations(staticClientSet, mcp.Spec.NodeSelector.MatchLabels); err != nil {
 						return
 					} else if err == nil && isMcPInProgress {
 						SendEmail("MachineConfigPool", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "mcp", mcp.Name), "faulty", fmt.Sprintf("MachineConfig pool %s update is in progress and node %s's annotation has been set to other than done in cluster %s, please execute <oc get mcp %s > to validate it", mcp.Name, node, runningHost, mcp.Name), runningHost, spec)
 						return
 					} else {
-						if isNodeAffected, anode, err := CheckNodeReadiness(staticClientSet, mcp.Spec.MachineConfigSelector.MatchLabels); err != nil {
+						if isNodeAffected, anode, err := CheckNodeReadiness(staticClientSet, mcp.Spec.NodeSelector.MatchLabels); err != nil {
 							// unable to verify node status
 							return
 						} else if err == nil && isNodeAffected {
 							SendEmail("MachineConfigPool", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "mcp", mcp.Name), "faulty", fmt.Sprintf("MachineConfig pool %s update has been set to true, due to possible manual action on node %s in cluster %s, please execute <oc get mcp %s > to validate it", mcp.Name, anode, runningHost, mcp.Name), runningHost, spec)
-						} else {
-							SendEmail("MachineConfigPool", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "mcp", mcp.Name), "faulty", fmt.Sprintf("MachineConfig pool %s update has been set to true, nodes are healthy, mcp update is probably just starting in cluster %s, please execute <oc get mcp %s > to validate it", mcp.Name, runningHost, mcp.Name), runningHost, spec)
 						}
 					}
 				}
