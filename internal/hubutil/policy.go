@@ -33,7 +33,7 @@ func OnPolicyUpdate(staticClientSet *kubernetes.Clientset, spec *ocpscanv1.OcpHe
 							if !detail.History[0].LastTimestamp.Time.Before(pastTime) {
 								ocphealthcheckutil.SendEmail("Policy-update", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", policy.Name, policy.Namespace), "faulty", fmt.Sprintf("Root policy %s is either non-compliant/disabled in namespace %s in cluster %s, please execute <oc get policy %s -n %s -o json | jq .status> to validate it", policy.Name, policy.Namespace, runningHost, policy.Name, policy.Namespace), runningHost, spec)
 							} else {
-								log.Log.Info(fmt.Sprintf("Ignoring the non-compliant policy %s in namespace %s as it is non-compliant for more than 6 hours"))
+								log.Log.Info(fmt.Sprintf("Ignoring the non-compliant policy %s in namespace %s as it is non-compliant for more than 6 hours", policy.Name, policy.Namespace))
 							}
 						}
 					}
