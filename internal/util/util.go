@@ -970,7 +970,7 @@ func OnPodUpdate(newObj interface{}, spec *ocpscanv1.OcpHealthCheckSpec, status 
 						}
 					}
 				}
-			} else if newCont.State.Waiting.Reason == PODERRIMAGEPULL || newCont.State.Waiting.Reason == "ImagePullBackOff" {
+			} else if newCont.State.Waiting.Reason == PODERRIMAGEPULL || newCont.State.Waiting.Reason == PODIMAGEPULLBACKOFF {
 				SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("pod %s's container %s is failing in namespace %s due to ErrImagePull in cluster %s", newPo.Name, newCont.Name, newPo.Namespace, runningHost), runningHost, spec)
 			}
 		} else {
