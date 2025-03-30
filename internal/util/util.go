@@ -208,7 +208,7 @@ func SendEmailAlert(category string, nodeName string, filename string, spec *ocp
 	if _, err := os.Stat(filename); os.IsNotExist(err) {
 		err = writeFile(filename, "sent")
 		if err != nil {
-			fmt.Printf("Failed to write to pv: %s", err)
+			fmt.Printf("Failed to write to file: %s", filename)
 			return
 		}
 		message := fmt.Sprintf(`/usr/bin/printf '%s\n' "Subject: %s OcpHealthCheck alert from %s" "" "Alert: %s" | /usr/sbin/sendmail -f %s -S %s %s`, "%s", category, nodeName, alert, spec.Email, spec.RelayHost, spec.Email)
@@ -221,7 +221,7 @@ func SendEmailAlert(category string, nodeName string, filename string, spec *ocp
 	} else {
 		data, err := ReadFile(filename)
 		if err != nil {
-			fmt.Println("failed to read the file")
+			fmt.Printf("Failed to read from file: %s", filename)
 			return
 		}
 		if data != "sent" {
@@ -232,7 +232,7 @@ func SendEmailAlert(category string, nodeName string, filename string, spec *ocp
 			}
 			err = writeFile(filename, "sent")
 			if err != nil {
-				fmt.Printf("Failed to write to pv: %s", err)
+				fmt.Printf("Failed to write to file: %s", filename)
 				return
 			}
 			message := fmt.Sprintf(`/usr/bin/printf '%s\n' "Subject: %s OcpHealthCheck alert from %s" "" "Alert: %s" | /usr/sbin/sendmail -f %s -S %s %s`, "%s", category, nodeName, alert, spec.Email, spec.RelayHost, spec.Email)
@@ -921,76 +921,14 @@ func OnPodUpdate(newObj interface{}, spec *ocpscanv1.OcpHealthCheckSpec, status 
 		return
 	}
 
-	for _, newCont := range newPo.Status.ContainerStatuses {
-		if newCont.State.Terminated != nil && newCont.State.Terminated.ExitCode != 0 {
-			SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("pod %s's container %s is terminated with exit code %d (reason %s) in namespace %s in cluster %s", newPo.Name, newCont.Name, newCont.LastTerminationState.Terminated.ExitCode, newCont.LastTerminationState.Terminated.Reason, newPo.Namespace, runningHost), runningHost, spec)
-		} else if newCont.State.Running != nil || (newCont.State.Terminated != nil && newCont.State.Terminated.ExitCode == 0) {
-			// Assuming if pod has moved back to running from CrashLoopBackOff/others, the restart count will always be greater than 0
-			if newCont.RestartCount > 0 {
-				if newCont.LastTerminationState.Terminated != nil && newCont.LastTerminationState.Terminated.ExitCode != 0 && newCont.LastTerminationState.Terminated.FinishedAt.String() != "" {
-					if PodLastRestartTimerUp(newCont.LastTerminationState.Terminated.FinishedAt.String()) {
-						SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "recovered", fmt.Sprintf("pod %s's container %s whic was previously terminated with non exit code 0 is now either running/completed in namespace %s in cluster %s", newPo.Name, newCont.Name, newPo.Namespace, runningHost), runningHost, spec)
-					}
-				}
-			}
+	if newPo.Status.InitContainerStatuses != nil {
+		for _, newCont := range newPo.Status.InitContainerStatuses {
+			PodCheck(clientset, *newPo, newCont, spec, runningHost)
 		}
-		if newCont.State.Waiting != nil {
-			if newCont.State.Waiting.Reason == "CrashLoopBackOff" {
-				pv := HasPv(newPo.Spec.Volumes)
-				if pv {
-					if affected, err := PvHasDifferentNode(clientset, newPo.Spec.Volumes, newPo.Namespace, newPo.Spec.NodeName); err != nil {
-						if k8serrors.IsNotFound(err) {
-							SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, volume attachment is not found in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses and oc get pv and oc get volumeattachments> to validate it", newPo.Name, newCont.Name, runningHost, newPo.Name, newPo.Namespace), runningHost, spec)
-						} else {
-							SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, unable to retrieve volume attachments in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses and oc get pv and oc get volumeattachments> to validate it", newPo.Name, newCont.Name, runningHost, newPo.Name, newPo.Namespace), runningHost, spec)
-						}
+	}
 
-					} else if err == nil && affected {
-						SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, one of the volume attachments is mounted on a different node in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses and oc get pv and oc get volumeattachments > to validate it", newPo.Name, newCont.Name, runningHost, newPo.Name, newPo.Namespace), runningHost, spec)
-					} else {
-						// Check if it is due to other issues
-						for _, cont := range newPo.Spec.Containers {
-							if cont.Name == newCont.Name {
-								if newCont.Image != cont.Image {
-									SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, possible ErrImagePull/other issues, in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses> to validate it", newPo.Name, newCont.Name, runningHost, newPo.Name, newPo.Namespace), runningHost, spec)
-								} else {
-									SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, doesn't seem to be volume-attachment/image-pull issues, in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses> to validate it", newPo.Name, newCont.Name, runningHost, newPo.Name, newPo.Namespace), runningHost, spec)
-								}
-							}
-						}
-					}
-				} else {
-					for _, cont := range newPo.Spec.Containers {
-						if cont.Name == newCont.Name {
-							if newCont.Image != cont.Image {
-								SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, appears to be ErrImagePull error in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses and oc  > to validate it", newPo.Name, newCont.Name, runningHost, newPo.Name, newPo.Namespace), runningHost, spec)
-							} else {
-								SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, no persistent volume is attached to the pod, doesn't seem to be ErrImagePull, could be other issues, in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses> to validate it", newPo.Name, newCont.Name, runningHost, newPo.Name, newPo.Namespace), runningHost, spec)
-							}
-						}
-					}
-				}
-			} else if newCont.State.Waiting.Reason == PODERRIMAGEPULL || newCont.State.Waiting.Reason == PODIMAGEPULLBACKOFF {
-				SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("pod %s's container %s is failing in namespace %s due to ErrImagePull in cluster %s", newPo.Name, newCont.Name, newPo.Namespace, runningHost), runningHost, spec)
-			}
-		} else {
-			// Assuming if pod has moved back to running from CrashLoopBackOff/others, the restart count will always be greater than 0
-			if newCont.RestartCount > 0 {
-				if newCont.LastTerminationState.Terminated != nil && newCont.LastTerminationState.Terminated.ExitCode != 0 && newCont.LastTerminationState.Terminated.FinishedAt.String() != "" {
-					if PodLastRestartTimerUp(newCont.LastTerminationState.Terminated.FinishedAt.String()) {
-						SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "recovered", fmt.Sprintf("pod %s's container %s (several restart count) which was previously terminated with non exit code 0 is now either running/completed in namespace %s in cluster %s ", newPo.Name, newCont.Name, newPo.Namespace, runningHost), runningHost, spec)
-					}
-				} else if newCont.State.Terminated != nil && newCont.State.Terminated.ExitCode == 0 {
-					// this condition will satisfy the pod that was previously running/completed and went into issues (due to image pull for example) and becomes running/completed
-					SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "recovered", fmt.Sprintf("pod %s's container %s which was previously terminated with non exit code 0 is now either running/completed in namespace %s in cluster %s ", newPo.Name, newCont.Name, newPo.Namespace, runningHost), runningHost, spec)
-				}
-			} else {
-				// this condition will satisfy the pod that was never in running state (due to image pull for example) and becomes running/completed
-				if newCont.State.Terminated == nil {
-					SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "recovered", fmt.Sprintf("pod %s's container %s (was never in running state) which was previously terminated/waiting is now either running/completed in namespace %s in cluster %s ", newPo.Name, newCont.Name, newPo.Namespace, runningHost), runningHost, spec)
-				}
-			}
-		}
+	for _, newCont := range newPo.Status.ContainerStatuses {
+		PodCheck(clientset, *newPo, newCont, spec, runningHost)
 	}
 }
 
@@ -1082,6 +1020,79 @@ func CheckTridentBackendConnectivity(staticClientSet *kubernetes.Clientset, spec
 				SendEmail("NetApp-Backend-LIF", fmt.Sprintf("/home/golanguser/.%s-%s.txt", "netapp", backend.Name), "faulty", fmt.Sprintf("NetApp backend %s's (namespace %s) MGMT LIF %s is unreachable from cluster %s", backend.Name, backend.Namespace, bspec.ManagementLIF, runningHost), runningHost, spec)
 			} else {
 				SendEmail("NetApp-Backend-LIF", fmt.Sprintf("/home/golanguser/.%s-%s.txt", "netapp", backend.Name), "recovered", fmt.Sprintf("NetApp backend %s's (namespace %s) MGMT LIF %s is now reachable from cluster %s", backend.Name, backend.Namespace, bspec.ManagementLIF, runningHost), runningHost, spec)
+			}
+		}
+	}
+}
+
+func PodCheck(clientset *kubernetes.Clientset, newPo corev1.Pod, newCont corev1.ContainerStatus, spec *ocpscanv1.OcpHealthCheckSpec, runningHost string) {
+	if newCont.State.Terminated != nil && newCont.State.Terminated.ExitCode != 0 {
+		SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("pod %s's container %s is terminated with non exit code 0 in namespace %s in cluster %s", newPo.Name, newCont.Name, newPo.Namespace, runningHost), runningHost, spec)
+	} else if newCont.State.Running != nil || (newCont.State.Terminated != nil && newCont.State.Terminated.ExitCode == 0) {
+		// Assuming if pod has moved back to running from CrashLoopBackOff/others, the restart count will always be greater than 0
+		if newCont.RestartCount > 0 {
+			if newCont.LastTerminationState.Terminated != nil && newCont.LastTerminationState.Terminated.ExitCode != 0 && newCont.LastTerminationState.Terminated.FinishedAt.String() != "" {
+				if PodLastRestartTimerUp(newCont.LastTerminationState.Terminated.FinishedAt.String()) {
+					SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("pod %s's container %s whic was previously terminated with non exit code 0 is now either running/completed in namespace %s in cluster %s", newPo.Name, newCont.Name, newPo.Namespace, runningHost), runningHost, spec)
+				}
+			}
+		}
+	}
+	if newCont.State.Waiting != nil {
+		if newCont.State.Waiting.Reason == "CrashLoopBackOff" {
+			pv := HasPv(newPo.Spec.Volumes)
+			if pv {
+				if affected, err := PvHasDifferentNode(clientset, newPo.Spec.Volumes, newPo.Namespace, newPo.Spec.NodeName); err != nil {
+					if k8serrors.IsNotFound(err) {
+						SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, volume attachment is not found in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses and oc get pv and oc get volumeattachments> to validate it", newPo.Name, newCont.Name, runningHost, newPo.Name, newPo.Namespace), runningHost, spec)
+					} else {
+						SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, unable to retrieve volume attachments in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses and oc get pv and oc get volumeattachments> to validate it", newPo.Name, newCont.Name, runningHost, newPo.Name, newPo.Namespace), runningHost, spec)
+					}
+
+				} else if err == nil && affected {
+					SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, one of the volume attachments is mounted on a different node in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses and oc get pv and oc get volumeattachments > to validate it", newPo.Name, newCont.Name, runningHost, newPo.Name, newPo.Namespace), runningHost, spec)
+				} else {
+					// Check if it is due to other issues
+					for _, cont := range newPo.Spec.Containers {
+						if cont.Name == newCont.Name {
+							if newCont.Image != cont.Image {
+								SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, possible ErrImagePull/other issues, in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses> to validate it", newPo.Name, newCont.Name, runningHost, newPo.Name, newPo.Namespace), runningHost, spec)
+							} else {
+								SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, doesn't seem to be volume-attachment/image-pull issues, in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses> to validate it", newPo.Name, newCont.Name, runningHost, newPo.Name, newPo.Namespace), runningHost, spec)
+							}
+						}
+					}
+				}
+			} else {
+				for _, cont := range newPo.Spec.Containers {
+					if cont.Name == newCont.Name {
+						if newCont.Image != cont.Image {
+							SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, appears to be ErrImagePull error in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses and oc  > to validate it", newPo.Name, newCont.Name, runningHost, newPo.Name, newPo.Namespace), runningHost, spec)
+						} else {
+							SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, no persistent volume is attached to the pod, doesn't seem to be ErrImagePull, could be other issues, in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses> to validate it", newPo.Name, newCont.Name, runningHost, newPo.Name, newPo.Namespace), runningHost, spec)
+						}
+					}
+				}
+			}
+		} else if newCont.State.Waiting.Reason == PODERRIMAGEPULL || newCont.State.Waiting.Reason == PODIMAGEPULLBACKOFF {
+			SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("pod %s's container %s is failing in namespace %s due to ErrImagePull in cluster %s", newPo.Name, newCont.Name, newPo.Namespace, runningHost), runningHost, spec)
+		}
+
+	} else {
+		// Assuming if pod has moved back to running from CrashLoopBackOff/others, the restart count will always be greater than 0
+		if newCont.RestartCount > 0 {
+			if newCont.LastTerminationState.Terminated != nil && newCont.LastTerminationState.Terminated.ExitCode != 0 && newCont.LastTerminationState.Terminated.FinishedAt.String() != "" {
+				if PodLastRestartTimerUp(newCont.LastTerminationState.Terminated.FinishedAt.String()) {
+					SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "recovered", fmt.Sprintf("pod %s's container %s which was previously terminated with non exit code 0 is now either running/completed in namespace %s in cluster %s ", newPo.Name, newCont.Name, newPo.Namespace, runningHost), runningHost, spec)
+				}
+			} else if newCont.State.Terminated != nil && newCont.State.Terminated.ExitCode == 0 {
+				// this condition will satisfy the pod that was previously running/completed and went into issues (due to image pull for example) and becomes running/completed
+				SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "recovered", fmt.Sprintf("pod %s's container %s which was previously terminated with non exit code 0 is now either running/completed in namespace %s in cluster %s ", newPo.Name, newCont.Name, newPo.Namespace, runningHost), runningHost, spec)
+			}
+		} else {
+			// this condition will satisfy the pod that was never in running state (due to image pull for example) and becomes running/completed
+			if newCont.State.Terminated == nil {
+				SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "recovered", fmt.Sprintf("pod %s's container %s which was previously terminated/waiting is now either running/completed in namespace %s in cluster %s ", newPo.Name, newCont.Name, newPo.Namespace, runningHost), runningHost, spec)
 			}
 		}
 	}
