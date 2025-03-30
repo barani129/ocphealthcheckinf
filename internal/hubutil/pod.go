@@ -75,41 +75,36 @@ func OnPodUpdate(clientset *kubernetes.Clientset, spec *ocpscanv1.OcpHealthCheck
 						}
 						if newCont.State.Waiting != nil {
 							if newCont.State.Waiting.Reason == "CrashLoopBackOff" {
-								if len(newPo.Spec.Volumes) > 0 {
-									for _, vol := range newPo.Spec.Volumes {
-										if vol.PersistentVolumeClaim != nil && vol.PersistentVolumeClaim.ClaimName != "" {
-											// Get the persistent volume claim name
-											pvc, err := clientset.CoreV1().PersistentVolumeClaims(newPo.Namespace).Get(context.Background(), vol.PersistentVolumeClaim.ClaimName, metav1.GetOptions{})
-											if err != nil {
-												if k8serrors.IsNotFound(err) {
-													ocphealthcheckutil.SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, configured PVC %s doesn't exist in namespace %s in cluster %s, please execute <oc get pods %s -n %s -o json | jq .spec.volumes[] and oc get pvc %s -n %s -o json | jq .spec.volumeName> to validate it", newPo.Name, newCont.Name, pvc.Name, pvc.Namespace, runningHost, newPo.Name, newPo.Namespace, pvc.Name, pvc.Namespace), runningHost, spec)
-												} else {
-													ocphealthcheckutil.SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, unable to retrieve configured PVC %s in namespace %s in cluster %s, please execute <oc get pods %s -n %s -o json | jq .spec.volumes[] and oc get pvc %s -n %s -o json | jq .spec.volumeName> to validate it", newPo.Name, newCont.Name, pvc.Name, pvc.Namespace, runningHost, newPo.Name, newPo.Namespace, pvc.Name, pvc.Namespace), runningHost, spec)
-												}
-											}
-											if affected, err := ocphealthcheckutil.PvHasDifferentNode(clientset, pvc.Spec.VolumeName, newPo.Spec.NodeName); err != nil {
-												ocphealthcheckutil.SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, unable to retrieve volume attachment of volume %s in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses and oc get volumeattachments | grep %s > to validate it", newPo.Name, newCont.Name, pvc.Spec.VolumeName, runningHost, newPo.Name, newPo.Namespace, pvc.Spec.VolumeName), runningHost, spec)
-											} else if err == nil && affected {
-												ocphealthcheckutil.SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, volume attachment of volume %s is mounted on a different node in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses and oc get volumeattachments | grep %s > to validate it", newPo.Name, newCont.Name, pvc.Spec.VolumeName, runningHost, newPo.Name, newPo.Namespace, pvc.Spec.VolumeName), runningHost, spec)
-											} else {
-												// Check if it is due to other issues
-												for _, cont := range newPo.Spec.Containers {
-													if cont.Name == newCont.Name {
-														if newCont.Image != cont.Image {
-															ocphealthcheckutil.SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, volume attachment of volume %s is mounted on the SAME node, could be other issues in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses and oc get volumeattachments | grep %s > to validate it", newPo.Name, newCont.Name, pvc.Spec.VolumeName, runningHost, newPo.Name, newPo.Namespace, pvc.Spec.VolumeName), runningHost, spec)
-														}
-													}
-												}
-											}
+								pv := ocphealthcheckutil.HasPv(newPo.Spec.Volumes)
+								if pv {
+									if affected, err := ocphealthcheckutil.PvHasDifferentNode(clientset, newPo.Spec.Volumes, newPo.Namespace, newPo.Spec.NodeName); err != nil {
+										if k8serrors.IsNotFound(err) {
+											ocphealthcheckutil.SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, volume attachment is not found in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses and oc get pv and oc get volumeattachments> to validate it", newPo.Name, newCont.Name, runningHost, newPo.Name, newPo.Namespace), runningHost, spec)
 										} else {
-											for _, cont := range newPo.Spec.Containers {
-												if cont.Name == newCont.Name {
-													if newCont.Image != cont.Image {
-														ocphealthcheckutil.SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, appears to be ErrImagePull error in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses and oc  > to validate it", newPo.Name, newCont.Name, runningHost, newPo.Name, newPo.Namespace), runningHost, spec)
-													} else {
-														ocphealthcheckutil.SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, no persistent volume is attached to the pod, doesn't seem to be ErrImagePull, could be other issues, in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses> to validate it", newPo.Name, newCont.Name, runningHost, newPo.Name, newPo.Namespace), runningHost, spec)
-													}
+											ocphealthcheckutil.SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, unable to retrieve volume attachments in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses and oc get pv and oc get volumeattachments> to validate it", newPo.Name, newCont.Name, runningHost, newPo.Name, newPo.Namespace), runningHost, spec)
+										}
+
+									} else if err == nil && affected {
+										ocphealthcheckutil.SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, one of the volume attachments is mounted on a different node in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses and oc get pv and oc get volumeattachments > to validate it", newPo.Name, newCont.Name, runningHost, newPo.Name, newPo.Namespace), runningHost, spec)
+									} else {
+										// Check if it is due to other issues
+										for _, cont := range newPo.Spec.Containers {
+											if cont.Name == newCont.Name {
+												if newCont.Image != cont.Image {
+													ocphealthcheckutil.SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, possible ErrImagePull/other issues, in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses> to validate it", newPo.Name, newCont.Name, runningHost, newPo.Name, newPo.Namespace), runningHost, spec)
+												} else {
+													ocphealthcheckutil.SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, doesn't seem to be volume-attachment/image-pull issues, in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses> to validate it", newPo.Name, newCont.Name, runningHost, newPo.Name, newPo.Namespace), runningHost, spec)
 												}
+											}
+										}
+									}
+								} else {
+									for _, cont := range newPo.Spec.Containers {
+										if cont.Name == newCont.Name {
+											if newCont.Image != cont.Image {
+												ocphealthcheckutil.SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, appears to be ErrImagePull error in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses and oc  > to validate it", newPo.Name, newCont.Name, runningHost, newPo.Name, newPo.Namespace), runningHost, spec)
+											} else {
+												ocphealthcheckutil.SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("Pod %s's container %s is in CrashLoopBackOff state, no persistent volume is attached to the pod, doesn't seem to be ErrImagePull, could be other issues, in cluster %s, please execute <oc get pods %s -n %s -o json | jq .status.containerStatuses> to validate it", newPo.Name, newCont.Name, runningHost, newPo.Name, newPo.Namespace), runningHost, spec)
 											}
 										}
 									}
@@ -117,6 +112,7 @@ func OnPodUpdate(clientset *kubernetes.Clientset, spec *ocpscanv1.OcpHealthCheck
 							} else if newCont.State.Waiting.Reason == ocphealthcheckutil.PODERRIMAGEPULL || newCont.State.Waiting.Reason == ocphealthcheckutil.PODIMAGEPULLBACKOFF {
 								ocphealthcheckutil.SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("pod %s's container %s is failing in namespace %s due to ErrImagePull in cluster %s", newPo.Name, newCont.Name, newPo.Namespace, runningHost), runningHost, spec)
 							}
+
 						} else {
 							// Assuming if pod has moved back to running from CrashLoopBackOff/others, the restart count will always be greater than 0
 							if newCont.RestartCount > 0 {

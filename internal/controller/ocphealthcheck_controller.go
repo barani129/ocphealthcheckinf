@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -279,7 +280,17 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		hubutil.OnArgoUpdate(staticClientSet, spec, runningHost)
 		log.Log.Info("Running ManagedCluster Checks")
 		hubutil.OnManagedClusterUpdate(staticClientSet, spec, runningHost)
-		util.CleanUpRunningPods(staticClientSet, spec, status, runningHost)
+		log.Log.Info("Checking NetApp backend management LIF reachability")
+		util.CheckTridentBackendConnectivity(staticClientSet, spec, runningHost)
+		log.Log.Info("Running pod cleanup")
+		util.CleanUpRunningPods(staticClientSet, spec, runningHost)
+		if files, err := os.ReadDir("/home/golanguser/files/ocphealth/"); err != nil {
+			log.Log.Error(err, "unable to read files")
+		} else if len(files) > 0 {
+			status.Healthy = false
+		} else {
+			status.Healthy = true
+		}
 		report(ocphealthcheckv1.ConditionTrue, "hub healthcheck functions compiled successfully", nil)
 		return ctrl.Result{Requeue: true}, nil
 	} else {
@@ -374,10 +385,17 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				report(ocphealthcheckv1.ConditionTrue, "dynamic informers compiled successfully", nil)
 				if r.podCleaner.Time.Before(podCleanupTime) {
 					log.Log.Info("Running pod files cleanup")
-					util.CleanUpRunningPods(staticClientSet, spec, status, runningHost)
+					util.CleanUpRunningPods(staticClientSet, spec, runningHost)
 					log.Log.Info("Completed pod files cleanup")
 					now := metav1.Now()
 					r.podCleaner = &now
+					if files, err := os.ReadDir("/home/golanguser/files/ocphealth/"); err != nil {
+						log.Log.Info(err.Error())
+					} else if len(files) > 0 {
+						status.Healthy = false
+					} else {
+						status.Healthy = true
+					}
 				}
 			}
 		} else {
