@@ -66,6 +66,7 @@ type OcpHealthCheckReconciler struct {
 	CatalogSourceInformer    cache.SharedIndexInformer
 	CsvInformer              cache.SharedIndexInformer
 	TunedInformer            cache.SharedIndexInformer
+	TridentInformer          cache.SharedIndexInformer
 	stopChan                 chan struct{}
 	podCleaner               *metav1.Time
 }
@@ -253,6 +254,11 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		Version:  "v1",
 		Resource: "profiles",
 	}
+	tridentResource := schema.GroupVersionResource{
+		Group:    "trident.netapp.io",
+		Version:  "v1",
+		Resource: "tridentbackends",
+	}
 	if spec.HubCluster != nil && *spec.HubCluster {
 		log.Log.Info("Running MCP Checks")
 		if inProgress, err := util.CheckMCPINProgress(staticClientSet); err != nil {
@@ -280,8 +286,6 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		hubutil.OnArgoUpdate(staticClientSet, spec, runningHost)
 		log.Log.Info("Running ManagedCluster Checks")
 		hubutil.OnManagedClusterUpdate(staticClientSet, spec, runningHost)
-		log.Log.Info("Checking NetApp backend management LIF reachability")
-		util.CheckTridentBackendConnectivity(staticClientSet, spec, runningHost)
 		log.Log.Info("Running pod cleanup")
 		util.CleanUpRunningPods(staticClientSet, spec, runningHost)
 		if files, err := os.ReadDir("/home/golanguser/files/ocphealth/"); err != nil {
@@ -325,7 +329,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				r.CatalogSourceInformer = r.factory.ForResource(catalogResource).Informer()
 				r.CsvInformer = r.factory.ForResource(csvResource).Informer()
 				r.TunedInformer = r.factory.ForResource(tpResource).Informer()
-
+				r.TridentInformer = r.factory.ForResource(tridentResource).Informer()
 				r.MCPInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 					UpdateFunc: func(oldObj, newObj interface{}) {
 						util.OnMCPUpdate(newObj, staticClientSet, status, spec, runningHost)
@@ -378,11 +382,18 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 						util.OnTunedProfileUpdate(newObj, spec, runningHost)
 					},
 				})
+				r.TridentInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+					UpdateFunc: func(oldObj, newObj interface{}) {
+						util.OnTridentBackendUpdate(newObj, spec, runningHost)
+					},
+				})
 				log.Log.Info("Starting dynamic informer factory again")
 				now := metav1.Now()
 				r.InformerTimer = &now
 				go r.factory.Start(r.stopChan)
 				report(ocphealthcheckv1.ConditionTrue, "dynamic informers compiled successfully", nil)
+				log.Log.Info("Checking trident backend management LIF reachability")
+				util.CheckTridentBackendConnectivity(staticClientSet, spec, runningHost)
 				if r.podCleaner.Time.Before(podCleanupTime) {
 					log.Log.Info("Running pod files cleanup")
 					util.CleanUpRunningPods(staticClientSet, spec, runningHost)
@@ -410,7 +421,7 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			r.CatalogSourceInformer = r.factory.ForResource(catalogResource).Informer()
 			r.CsvInformer = r.factory.ForResource(csvResource).Informer()
 			r.TunedInformer = r.factory.ForResource(tpResource).Informer()
-
+			r.TridentInformer = r.factory.ForResource(tridentResource).Informer()
 			r.MCPInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 				UpdateFunc: func(oldObj, newObj interface{}) {
 					util.OnMCPUpdate(newObj, staticClientSet, status, spec, runningHost)
@@ -463,11 +474,18 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 					util.OnTunedProfileUpdate(newObj, spec, runningHost)
 				},
 			})
+			r.TridentInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+				UpdateFunc: func(oldObj, newObj interface{}) {
+					util.OnTridentBackendUpdate(newObj, spec, runningHost)
+				},
+			})
 			log.Log.Info("Starting dynamic informer factory")
 			now := metav1.Now()
 			r.InformerTimer = &now
 			r.podCleaner = &now
 			go r.factory.Start(r.stopChan)
+			log.Log.Info("Checking trident backend management LIF reachability")
+			util.CheckTridentBackendConnectivity(staticClientSet, spec, runningHost)
 			report(ocphealthcheckv1.ConditionTrue, "dynamic informers compiled successfully", nil)
 		}
 		return ctrl.Result{Requeue: true}, nil
