@@ -1017,11 +1017,28 @@ func CheckTridentBackendConnectivity(staticClientSet *kubernetes.Clientset, spec
 			cmd := exec.Command("/bin/bash", "-c", command)
 			err = cmd.Run()
 			if err != nil {
-				SendEmail("NetApp-Backend-LIF", fmt.Sprintf("/home/golanguser/.%s-%s.txt", "netapp", backend.Name), "faulty", fmt.Sprintf("NetApp backend %s's (namespace %s) MGMT LIF %s is unreachable from cluster %s", backend.Name, backend.Namespace, bspec.ManagementLIF, runningHost), runningHost, spec)
+				SendEmail("NetApp-Backend-LIF", fmt.Sprintf("/home/golanguser/.%s-%s.txt", "netappbackend", backend.Name), "faulty", fmt.Sprintf("NetApp backend %s's (namespace %s) MGMT LIF %s is unreachable from cluster %s", backend.Name, backend.Namespace, bspec.ManagementLIF, runningHost), runningHost, spec)
 			} else {
-				SendEmail("NetApp-Backend-LIF", fmt.Sprintf("/home/golanguser/.%s-%s.txt", "netapp", backend.Name), "recovered", fmt.Sprintf("NetApp backend %s's (namespace %s) MGMT LIF %s is now reachable from cluster %s", backend.Name, backend.Namespace, bspec.ManagementLIF, runningHost), runningHost, spec)
+				SendEmail("NetApp-Backend-LIF", fmt.Sprintf("/home/golanguser/.%s-%s.txt", "netappbackend", backend.Name), "recovered", fmt.Sprintf("NetApp backend %s's (namespace %s) MGMT LIF %s is now reachable from cluster %s", backend.Name, backend.Namespace, bspec.ManagementLIF, runningHost), runningHost, spec)
 			}
 		}
+	}
+}
+
+func OnTridentBackendUpdate(newObj interface{}, spec *ocpscanv1.OcpHealthCheckSpec, runningHost string) {
+	tb := new(tridentv1.TridentBackend)
+	err := ConvertUnStructureToStructured(newObj, tb)
+	if err != nil {
+		log.Log.Error(err, "failed to convert")
+		return
+	}
+	if tb.DeletionTimestamp != nil {
+		return
+	}
+	if !tb.Online || tb.State != "online" {
+		SendEmail("NetApp-Backend-LIF", fmt.Sprintf("/home/golanguser/.%s-%s.txt", "netapp", tb.Name), "faulty", fmt.Sprintf("NetApp backend %s's (namespace %s) appears to be offline in cluster %s", tb.Name, tb.Namespace, runningHost), runningHost, spec)
+	} else {
+		SendEmail("NetApp-Backend-LIF", fmt.Sprintf("/home/golanguser/.%s-%s.txt", "netapp", tb.Name), "recovered", fmt.Sprintf("NetApp backend %s's (namespace %s) is back online in cluster %s", tb.Name, tb.Namespace, runningHost), runningHost, spec)
 	}
 }
 
