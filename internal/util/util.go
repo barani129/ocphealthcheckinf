@@ -709,13 +709,13 @@ func OnMCPUpdate(newObj interface{}, staticClientSet *kubernetes.Clientset, stat
 						}
 					}
 				}
-			} else if cond.Status == NODEREADYFalse {
+			} else {
 				SendEmail("MachineConfigPool", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "mcp", mcp.Name), "recovered", fmt.Sprintf("MachineConfig pool %s update which was previously set to true is now changed to false in cluster %s, please execute <oc get mcp %s > to validate it", mcp.Name, runningHost, mcp.Name), runningHost, spec)
 			}
 		} else if cond.Type == MACHINECONFIGUPDATEDEGRADED {
 			if cond.Status == NODEREADYTrue {
-				SendEmail("MachineConfigPool", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "mcp", mcp.Name), "faulty", fmt.Sprintf("MachineConfig pool %s is degraded in cluster %s, please execute <oc get mcp %s and oc get nodes> to validate it", mcp.Name, runningHost, mcp.Name), runningHost, spec)
-			} else if cond.Status == "False" {
+				SendEmail("MachineConfigPool", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "mcp-degraded", mcp.Name), "faulty", fmt.Sprintf("MachineConfig pool %s is degraded in cluster %s, please execute <oc get mcp %s and oc get nodes> to validate it", mcp.Name, runningHost, mcp.Name), runningHost, spec)
+			} else {
 				SendEmail("MachineConfigPool", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "mcp", mcp.Name), "recovered", fmt.Sprintf("MachineConfig pool %s is no longer degraded in cluster %s", mcp.Name, runningHost), runningHost, spec)
 			}
 		}
@@ -888,14 +888,6 @@ func OnPodUpdate(newObj interface{}, spec *ocpscanv1.OcpHealthCheckSpec, status 
 		return
 	}
 
-	if !strings.Contains(runningHost, "ospctl") && spec.EvnfmFQDN != "" {
-		if err := CheckEVNFMConnectivity(spec.EvnfmFQDN, EVNFMPORT); err != nil {
-			SendEmail("EVNFM-Connectivity", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "evnfm", EVNFMPORT), "faulty", fmt.Sprintf("EVNFM %s on port %s is unreachable from cluster %s ", spec.EvnfmFQDN, EVNFMPORT, runningHost), runningHost, spec)
-		} else {
-			SendEmail("EVNFM-Connectivity", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "evnfm", EVNFMPORT), "recovered", fmt.Sprintf("EVNFM %s on port %s is now reachable again from cluster %s ", spec.EvnfmFQDN, EVNFMPORT, runningHost), runningHost, spec)
-		}
-	}
-
 	if mcp, err := CheckMCPINProgress(clientset); err != nil {
 		log.Log.Info("unable to retrieve MCP progress")
 		return
@@ -943,14 +935,17 @@ func HasPv(volumes []corev1.Volume) bool {
 	return false
 }
 
-func CheckEVNFMConnectivity(host string, port string) error {
-	command := fmt.Sprintf("/usr/bin/nc -w 3 -zv %s %s", host, port)
-	cmd := exec.Command("/bin/bash", "-c", command)
-	err := cmd.Run()
-	if err != nil {
-		return err
+func CheckEVNFMConnectivity(spec *ocpscanv1.OcpHealthCheckSpec, runningHost string) {
+	if !strings.Contains(runningHost, "ospctl") && spec.EvnfmFQDN != "" {
+		command := fmt.Sprintf("/usr/bin/nc -w 3 -zv %s %s", spec.EvnfmFQDN, EVNFMPORT)
+		cmd := exec.Command("/bin/bash", "-c", command)
+		err := cmd.Run()
+		if err != nil {
+			SendEmail("EVNFM-Connectivity", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "evnfm", EVNFMPORT), "faulty", fmt.Sprintf("EVNFM %s on port %s is unreachable from cluster %s ", spec.EvnfmFQDN, EVNFMPORT, runningHost), runningHost, spec)
+		} else {
+			SendEmail("EVNFM-Connectivity", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "evnfm", EVNFMPORT), "recovered", fmt.Sprintf("EVNFM %s on port %s is now reachable again from cluster %s ", spec.EvnfmFQDN, EVNFMPORT, runningHost), runningHost, spec)
+		}
 	}
-	return nil
 }
 
 // Hub functions
