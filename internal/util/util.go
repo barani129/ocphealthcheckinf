@@ -937,7 +937,7 @@ func HasPv(volumes []corev1.Volume) bool {
 
 func CheckEVNFMConnectivity(spec *ocpscanv1.OcpHealthCheckSpec, runningHost string) {
 	if !strings.Contains(runningHost, "ospctl") && spec.EvnfmFQDN != "" {
-		command := fmt.Sprintf("/usr/bin/nc -w 3 -zv %s %s", spec.EvnfmFQDN, EVNFMPORT)
+		command := fmt.Sprintf("/usr/bin/nc -w 5 -zv %s %s", spec.EvnfmFQDN, EVNFMPORT)
 		cmd := exec.Command("/bin/bash", "-c", command)
 		err := cmd.Run()
 		if err != nil {
