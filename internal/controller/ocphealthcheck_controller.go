@@ -399,6 +399,8 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				report(ocphealthcheckv1.ConditionTrue, "dynamic informers compiled successfully", nil)
 				log.Log.Info("Checking trident backend management LIF reachability")
 				util.CheckTridentBackendConnectivity(staticClientSet, spec, runningHost)
+				log.Log.Info("Checking EVFNM reachability")
+				util.CheckEVNFMConnectivity(spec, runningHost)
 				if r.podCleaner.Time.Before(podCleanupTime) {
 					log.Log.Info("Running pod files cleanup")
 					util.CleanUpRunningPods(staticClientSet, spec, runningHost)
@@ -491,6 +493,8 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			go r.factory.Start(r.stopChan)
 			log.Log.Info("Checking trident backend management LIF reachability")
 			util.CheckTridentBackendConnectivity(staticClientSet, spec, runningHost)
+			log.Log.Info("Checking EVFNM reachability")
+			util.CheckEVNFMConnectivity(spec, runningHost)
 			report(ocphealthcheckv1.ConditionTrue, "dynamic informers compiled successfully", nil)
 		}
 		return ctrl.Result{Requeue: true}, nil
