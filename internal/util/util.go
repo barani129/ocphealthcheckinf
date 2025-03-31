@@ -1025,6 +1025,24 @@ func CheckTridentBackendConnectivity(staticClientSet *kubernetes.Clientset, spec
 	}
 }
 
+func CheckHPEBackendConnectivity(staticClientSet *kubernetes.Clientset, spec *ocpscanv1.OcpHealthCheckSpec, runningHost string) {
+	bSecret, err := staticClientSet.CoreV1().Secrets("hpe-csi-driver").Get(context.Background(), "hpe-backend", metav1.GetOptions{})
+	if err != nil {
+		return
+	}
+	backendFQDN := string(bSecret.Data["backend"])
+	if backendFQDN != "" {
+		command := fmt.Sprintf("/usr/bin/nc -w 3 -zv %s %s", backendFQDN, "443")
+		cmd := exec.Command("/bin/bash", "-c", command)
+		err = cmd.Run()
+		if err != nil {
+			SendEmail("HP-Backend", fmt.Sprintf("/home/golanguser/.%s-%s.txt", "hp", "backend"), "faulty", fmt.Sprintf("HP backend %s is unreachable from cluster %s", backendFQDN, runningHost), runningHost, spec)
+		} else {
+			SendEmail("HP-Backend", fmt.Sprintf("/home/golanguser/.%s-%s.txt", "hp", "backend"), "recovered", fmt.Sprintf("NetApp backend %s is now reachable from cluster %s", backendFQDN, runningHost), runningHost, spec)
+		}
+	}
+}
+
 func OnTridentBackendUpdate(newObj interface{}, spec *ocpscanv1.OcpHealthCheckSpec, runningHost string) {
 	tb := new(tridentv1.TridentBackend)
 	err := ConvertUnStructureToStructured(newObj, tb)

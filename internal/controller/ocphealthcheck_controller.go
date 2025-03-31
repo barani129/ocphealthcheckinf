@@ -85,6 +85,7 @@ func (r *OcpHealthCheckReconciler) newOcpHealthChecker() (client.Object, error) 
 // +kubebuilder:rbac:groups=monitoring.spark.co.nz,resources=ocphealthchecks/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
 // +kubebuilder:rbac:groups="machineconfiguration.openshift.io",resources=machineconfigpools,verbs=get;list;watch
@@ -96,6 +97,8 @@ func (r *OcpHealthCheckReconciler) newOcpHealthChecker() (client.Object, error) 
 // +kubebuilder:rbac:groups="cluster.open-cluster-management.io",resources=managedclusters,verbs=get;list;watch
 // +kubebuilder:rbac:groups="argoproj.io",resources=argocds,verbs=get;list;watch
 // +kubebuilder:rbac:groups="tuned.openshift.io",resources=profiles,verbs=get;list;watch
+// +kubebuilder:rbac:groups="trident.netapp.io",resources=tridentbackendconfigs,verbs=get;list;watch
+// +kubebuilder:rbac:groups="trident.netapp.io",resources=tridentbackends,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -288,6 +291,8 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		hubutil.OnManagedClusterUpdate(staticClientSet, spec, runningHost)
 		log.Log.Info("Running pod cleanup")
 		util.CleanUpRunningPods(staticClientSet, spec, runningHost)
+		log.Log.Info("Checking HP CSI backend reachability")
+		util.CheckHPEBackendConnectivity(staticClientSet, spec, runningHost)
 		if files, err := os.ReadDir("/home/golanguser/files/ocphealth/"); err != nil {
 			log.Log.Error(err, "unable to read files")
 		} else if len(files) > 0 {

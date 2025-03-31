@@ -9,6 +9,7 @@ rules:
   resources:
   - configmaps
   - nodes
+  - secrets
   verbs:
   - get
   - list
@@ -104,6 +105,15 @@ rules:
   - policy.open-cluster-management.io
   resources:
   - policies
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - trident.netapp.io
+  resources:
+  - tridentbackendconfigs
+  - tridentbackends
   verbs:
   - get
   - list
