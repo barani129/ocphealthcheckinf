@@ -1,3 +1,19 @@
+/*
+Copyright 2025 baranitharan.chittharanjan@spark.co.nz.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+	http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package util
 
 import (
@@ -60,6 +76,7 @@ const (
 	READYUC                           = "READY"
 	SUCCEEDED                         = "Succeeded"
 	EVNFMPORT                         = "443"
+	TRIDENTONLINE                     = "online"
 )
 
 var (
@@ -1048,7 +1065,7 @@ func OnTridentBackendUpdate(newObj interface{}, spec *ocpscanv1.OcpHealthCheckSp
 	if tb.DeletionTimestamp != nil {
 		return
 	}
-	if !tb.Online || tb.State != "online" {
+	if !tb.Online || tb.State != TRIDENTONLINE {
 		SendEmail("NetApp-Backend-LIF", fmt.Sprintf("/home/golanguser/.%s-%s.txt", "netapp", tb.Name), "faulty", fmt.Sprintf("NetApp backend %s's (namespace %s) appears to be offline in cluster %s", tb.Name, tb.Namespace, runningHost), runningHost, spec)
 	} else {
 		SendEmail("NetApp-Backend-LIF", fmt.Sprintf("/home/golanguser/.%s-%s.txt", "netapp", tb.Name), "recovered", fmt.Sprintf("NetApp backend %s's (namespace %s) is back online in cluster %s", tb.Name, tb.Namespace, runningHost), runningHost, spec)
@@ -1057,13 +1074,13 @@ func OnTridentBackendUpdate(newObj interface{}, spec *ocpscanv1.OcpHealthCheckSp
 
 func PodCheck(clientset *kubernetes.Clientset, newPo corev1.Pod, newCont corev1.ContainerStatus, spec *ocpscanv1.OcpHealthCheckSpec, runningHost string) {
 	if newCont.State.Terminated != nil && newCont.State.Terminated.ExitCode != 0 {
-		SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("pod %s's container %s is terminated with non exit code 0 in namespace %s in cluster %s", newPo.Name, newCont.Name, newPo.Namespace, runningHost), runningHost, spec)
+		SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("pod %s's container %s is terminated with exit code %s (reason %s) in namespace %s in cluster %s", newPo.Name, newCont.Name, &newCont.State.Terminated.ExitCode, &newCont.State.Terminated.Reason, newPo.Namespace, runningHost), runningHost, spec)
 	} else if newCont.State.Running != nil || (newCont.State.Terminated != nil && newCont.State.Terminated.ExitCode == 0) {
 		// Assuming if pod has moved back to running from CrashLoopBackOff/others, the restart count will always be greater than 0
 		if newCont.RestartCount > 0 {
 			if newCont.LastTerminationState.Terminated != nil && newCont.LastTerminationState.Terminated.ExitCode != 0 && newCont.LastTerminationState.Terminated.FinishedAt.String() != "" {
 				if PodLastRestartTimerUp(newCont.LastTerminationState.Terminated.FinishedAt.String()) {
-					SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "faulty", fmt.Sprintf("pod %s's container %s whic was previously terminated with non exit code 0 is now either running/completed in namespace %s in cluster %s", newPo.Name, newCont.Name, newPo.Namespace, runningHost), runningHost, spec)
+					SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "recovered", fmt.Sprintf("pod %s's container %s whic was previously terminated with non exit code 0 is now either running/completed in namespace %s in cluster %s", newPo.Name, newCont.Name, newPo.Namespace, runningHost), runningHost, spec)
 				}
 			}
 		}

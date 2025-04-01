@@ -407,13 +407,13 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 					log.Log.Info("Completed pod files cleanup")
 					now := metav1.Now()
 					r.podCleaner = &now
-					if files, err := os.ReadDir("/home/golanguser/files/ocphealth/"); err != nil {
-						log.Log.Info(err.Error())
-					} else if len(files) > 0 {
-						status.Healthy = false
-					} else {
-						status.Healthy = true
-					}
+				}
+				if files, err := os.ReadDir("/home/golanguser/files/ocphealth/"); err != nil {
+					log.Log.Info(err.Error())
+				} else if len(files) > 0 {
+					status.Healthy = false
+				} else {
+					status.Healthy = true
 				}
 			}
 		} else {
