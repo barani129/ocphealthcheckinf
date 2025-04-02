@@ -1083,6 +1083,8 @@ func PodCheck(clientset *kubernetes.Clientset, newPo corev1.Pod, newCont corev1.
 					SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "recovered", fmt.Sprintf("pod %s's container %s whic was previously terminated with non exit code 0 is now either running/completed in namespace %s in cluster %s", newPo.Name, newCont.Name, newPo.Namespace, runningHost), runningHost, spec)
 				}
 			}
+		} else {
+			SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s-%s.txt", newPo.Name, newCont.Name, newPo.Namespace), "recovered", fmt.Sprintf("pod %s's container %s whic was previously terminated with non exit code 0 is now either running/completed in namespace %s in cluster %s", newPo.Name, newCont.Name, newPo.Namespace, runningHost), runningHost, spec)
 		}
 	}
 	if newCont.State.Waiting != nil {
