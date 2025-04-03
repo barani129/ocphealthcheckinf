@@ -65,6 +65,15 @@ type OcpHealthCheckSpec struct {
 	// Target FQDN of EVNFM cluster to check for connectivity on port 443 from the hosted cluster
 	// +optional
 	EvnfmFQDN string `json:"evnfmFQDN,omitempty"`
+
+	// IgnoredResource is a list of resources that do not required to be monitored
+	// format resourceKind: [namespace/resourceName]
+	// example for namespaced resources (ignoring updates from individual pods) pod: [default/nginx, default/busybox]
+	// suported resources: pod, policy
+	// to ignore all pod updates from resources in a namespace podnamespace: [default]
+	// suported resources: podnamespace, policynamespace
+	// +optional
+	IgnoredResources []map[string][]string `json:"ignoredResources,omitempty"`
 }
 
 // OcpHealthCheckStatus defines the observed state of OcpHealthCheck.

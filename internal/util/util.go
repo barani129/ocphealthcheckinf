@@ -582,6 +582,9 @@ func OnPolicyUpdate(newObj interface{}, staticClientSet *kubernetes.Clientset, s
 		// assuming it is deletion, so will ignore it
 		return
 	}
+	if IgnoredPolicy(spec, policy) {
+		return
+	}
 	pastTime := metav1.Now().Add(-1 * time.Hour * 6)
 	if !IsChildPolicy(policy) {
 		if policy.Status.ComplianceState == POLICYNONCOMPLIANT || policy.Spec.Disabled {
@@ -893,7 +896,6 @@ func CleanUpRunningPods(clientset *kubernetes.Clientset, spec *ocpscanv1.OcpHeal
 }
 
 func OnPodUpdate(newObj interface{}, spec *ocpscanv1.OcpHealthCheckSpec, status *ocpscanv1.OcpHealthCheckStatus, runningHost string, clientset *kubernetes.Clientset) {
-
 	newPo := new(corev1.Pod)
 	err := ConvertUnStructureToStructured(newObj, newPo)
 	if err != nil {
@@ -904,7 +906,9 @@ func OnPodUpdate(newObj interface{}, spec *ocpscanv1.OcpHealthCheckSpec, status 
 		// assuming it is deletion, so ignoring
 		return
 	}
-
+	if IgnoredPod(spec, newPo) {
+		return
+	}
 	if mcp, err := CheckMCPINProgress(clientset); err != nil {
 		log.Log.Info("unable to retrieve MCP progress")
 		return
@@ -939,6 +943,56 @@ func OnPodUpdate(newObj interface{}, spec *ocpscanv1.OcpHealthCheckSpec, status 
 	for _, newCont := range newPo.Status.ContainerStatuses {
 		PodCheck(clientset, *newPo, newCont, spec, runningHost)
 	}
+}
+
+func IgnoredPod(spec *ocpscanv1.OcpHealthCheckSpec, newPo *corev1.Pod) bool {
+	if spec.IgnoredResources != nil {
+		for _, resource := range spec.IgnoredResources {
+			for kind, res := range resource {
+				if kind == "pod" {
+					for _, re := range res {
+						r := strings.Split(re, "/")
+						if newPo.Namespace == r[0] && newPo.Name == r[1] {
+							// configured to be ignored
+							return true
+						}
+					}
+				} else if kind == "podnamespace" {
+					for _, re := range res {
+						if newPo.Namespace == re {
+							return true
+						}
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
+func IgnoredPolicy(spec *ocpscanv1.OcpHealthCheckSpec, policy *ocmpolicy.Policy) bool {
+	if spec.IgnoredResources != nil {
+		for _, resource := range spec.IgnoredResources {
+			for kind, res := range resource {
+				if kind == "policy" {
+					for _, re := range res {
+						r := strings.Split(re, "/")
+						if policy.Namespace == r[0] && policy.Name == r[1] {
+							// configured to be ignored
+							return true
+						}
+					}
+				} else if kind == "policynamespace" {
+					for _, re := range res {
+						if policy.Namespace == re {
+							return true
+						}
+					}
+				}
+			}
+		}
+	}
+	return false
 }
 
 func HasPv(volumes []corev1.Volume) bool {

@@ -59,39 +59,42 @@ func OnPodUpdate(clientset *kubernetes.Clientset, spec *ocpscanv1.OcpHealthCheck
 				return
 			}
 			for _, newPo := range podList.Items {
-				// ignoring pod changes during node restart
-				if nodeAffected, err := ocphealthcheckutil.CheckSingleNodeReadiness(clientset, newPo.Spec.NodeName); err != nil {
-					log.Log.Info("unable to retrieve node information")
-					return
-				} else if nodeAffected {
-					log.Log.Info("Exiting as node is not-ready/unschedulable")
-					return
-				}
-				if sameNs, err := ocphealthcheckutil.IsChildPolicyNamespace(clientset, newPo.Namespace); err != nil {
-					log.Log.Info("unable to retrieve policy object namespace")
-					return
-				} else if sameNs {
-					log.Log.Info("Exiting as child policy update is in progress")
-					// ocphealthcheckutil.SendEmail("Pod", fmt.Sprintf("cgu update in progress for namespace %s", newPo.Namespace), "faulty", fmt.Sprintf("possible CGU update is in progress for objects in namespace %s in cluster %s, no pod update alerts will be sent until CGU is compliant, please execute <oc get pods -n %s and oc get policy -A> to validate", newPo.Namespace, runningHost, newPo.Namespace), runningHost, spec)
-					return
-				}
-				if newPo.DeletionTimestamp == nil {
-					if newPo.Status.InitContainerStatuses != nil {
-						for _, newCont := range newPo.Status.InitContainerStatuses {
-							ocphealthcheckutil.PodCheck(clientset, newPo, newCont, spec, runningHost)
-						}
-					}
-					for _, newCont := range newPo.Status.ContainerStatuses {
-						ocphealthcheckutil.PodCheck(clientset, newPo, newCont, spec, runningHost)
-					}
-				} else {
-					files, err := os.ReadDir("/home/golanguser/files/ocphealth/")
-					if err != nil {
+				// ignoring resources that are configured to be ignored
+				if !ocphealthcheckutil.IgnoredPod(spec, &newPo) {
+					// ignoring pod changes during node restart
+					if nodeAffected, err := ocphealthcheckutil.CheckSingleNodeReadiness(clientset, newPo.Spec.NodeName); err != nil {
+						log.Log.Info("unable to retrieve node information")
+						return
+					} else if nodeAffected {
+						log.Log.Info("Exiting as node is not-ready/unschedulable")
 						return
 					}
-					for _, file := range files {
-						if strings.Contains(file.Name(), newPo.Name) && strings.Contains(file.Name(), newPo.Namespace) {
-							ocphealthcheckutil.SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/%s", file.Name()), "recovered", fmt.Sprintf("pod %s's container which was previously terminated/CrashLoopBackOff is now deleted in namespace %s in cluster %s ", newPo.Name, newPo.Namespace, runningHost), runningHost, spec)
+					if sameNs, err := ocphealthcheckutil.IsChildPolicyNamespace(clientset, newPo.Namespace); err != nil {
+						log.Log.Info("unable to retrieve policy object namespace")
+						return
+					} else if sameNs {
+						log.Log.Info("Exiting as child policy update is in progress")
+						// ocphealthcheckutil.SendEmail("Pod", fmt.Sprintf("cgu update in progress for namespace %s", newPo.Namespace), "faulty", fmt.Sprintf("possible CGU update is in progress for objects in namespace %s in cluster %s, no pod update alerts will be sent until CGU is compliant, please execute <oc get pods -n %s and oc get policy -A> to validate", newPo.Namespace, runningHost, newPo.Namespace), runningHost, spec)
+						return
+					}
+					if newPo.DeletionTimestamp == nil {
+						if newPo.Status.InitContainerStatuses != nil {
+							for _, newCont := range newPo.Status.InitContainerStatuses {
+								ocphealthcheckutil.PodCheck(clientset, newPo, newCont, spec, runningHost)
+							}
+						}
+						for _, newCont := range newPo.Status.ContainerStatuses {
+							ocphealthcheckutil.PodCheck(clientset, newPo, newCont, spec, runningHost)
+						}
+					} else {
+						files, err := os.ReadDir("/home/golanguser/files/ocphealth/")
+						if err != nil {
+							return
+						}
+						for _, file := range files {
+							if strings.Contains(file.Name(), newPo.Name) && strings.Contains(file.Name(), newPo.Namespace) {
+								ocphealthcheckutil.SendEmail("Pod", fmt.Sprintf("/home/golanguser/files/ocphealth/%s", file.Name()), "recovered", fmt.Sprintf("pod %s's container which was previously terminated/CrashLoopBackOff is now deleted in namespace %s in cluster %s ", newPo.Name, newPo.Namespace, runningHost), runningHost, spec)
+							}
 						}
 					}
 				}
