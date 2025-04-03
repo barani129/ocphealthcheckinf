@@ -75,6 +75,21 @@ spec:
                   Identifies if the openshift cluster is being used as hub for other clusters
                   Runs extra healthchecks about managed clusters
                 type: boolean
+              ignoredResources:
+                description: |-
+                  IgnoredResource is a list of resources that do not required to be monitored
+                  format resourceKind: [namespace/resourceName]
+                  example for namespaced resources (ignoring updates from individual pods) pod: [default/nginx, default/busybox]
+                  suported resources: pod, policy
+                  to ignore all pod updates from resources in a namespace podnamespace: [default]
+                  suported resources: podnamespace, policynamespace
+                items:
+                  additionalProperties:
+                    items:
+                      type: string
+                    type: array
+                  type: object
+                type: array
               relayHost:
                 description: SMTP Relay host for sending the email
                 type: string

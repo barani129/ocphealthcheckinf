@@ -37,26 +37,29 @@ func OnPolicyUpdate(staticClientSet *kubernetes.Clientset, spec *ocpscanv1.OcpHe
 		return
 	}
 	for _, policy := range policies.Items {
-		if policy.DeletionTimestamp != nil {
-			// assuming it is deletion, so will ignore it
-			return
-		}
-		pastTime := metav1.Now().Add(-1 * time.Hour * 6)
-		if !ocphealthcheckutil.IsChildPolicy(&policy) {
-			if policy.Status.ComplianceState == ocphealthcheckutil.POLICYNONCOMPLIANT || policy.Spec.Disabled {
-				if policy.Status.Details != nil {
-					for _, detail := range policy.Status.Details {
-						if detail.History != nil {
-							if !detail.History[0].LastTimestamp.Time.Before(pastTime) {
-								ocphealthcheckutil.SendEmail("Policy-update", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", policy.Name, policy.Namespace), "faulty", fmt.Sprintf("Root policy %s is either non-compliant/disabled in namespace %s in cluster %s, please execute <oc get policy %s -n %s -o json | jq .status> to validate it", policy.Name, policy.Namespace, runningHost, policy.Name, policy.Namespace), runningHost, spec)
-							} else {
-								log.Log.Info(fmt.Sprintf("Ignoring the non-compliant policy %s in namespace %s as it is non-compliant for more than 6 hours", policy.Name, policy.Namespace))
+		if !ocphealthcheckutil.IgnoredPolicy(spec, &policy) {
+			if policy.DeletionTimestamp != nil {
+				// assuming it is deletion, so will ignore it
+				return
+			}
+			// alerts for policies that are non-compliant within last 6 hours
+			pastTime := metav1.Now().Add(-1 * time.Hour * 6)
+			if !ocphealthcheckutil.IsChildPolicy(&policy) {
+				if policy.Status.ComplianceState == ocphealthcheckutil.POLICYNONCOMPLIANT || policy.Spec.Disabled {
+					if policy.Status.Details != nil {
+						for _, detail := range policy.Status.Details {
+							if detail.History != nil {
+								if !detail.History[0].LastTimestamp.Time.Before(pastTime) {
+									ocphealthcheckutil.SendEmail("Policy-update", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", policy.Name, policy.Namespace), "faulty", fmt.Sprintf("Root policy %s is either non-compliant/disabled in namespace %s in cluster %s, please execute <oc get policy %s -n %s -o json | jq .status> to validate it", policy.Name, policy.Namespace, runningHost, policy.Name, policy.Namespace), runningHost, spec)
+								} else {
+									log.Log.Info(fmt.Sprintf("Ignoring the non-compliant policy %s in namespace %s as it is non-compliant for more than 6 hours", policy.Name, policy.Namespace))
+								}
 							}
 						}
 					}
+				} else {
+					ocphealthcheckutil.SendEmail("Policy-update", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", policy.Name, policy.Namespace), "recovered", fmt.Sprintf("Root policy %s which was previously non-compliant/disabled is now compliant/enabled again in namespace %s in cluster %s", policy.Name, policy.Namespace, runningHost), runningHost, spec)
 				}
-			} else {
-				ocphealthcheckutil.SendEmail("Policy-update", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", policy.Name, policy.Namespace), "recovered", fmt.Sprintf("Root policy %s which was previously non-compliant/disabled is now compliant/enabled again in namespace %s in cluster %s", policy.Name, policy.Namespace, runningHost), runningHost, spec)
 			}
 		}
 	}
