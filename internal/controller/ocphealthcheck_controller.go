@@ -99,6 +99,7 @@ func (r *OcpHealthCheckReconciler) newOcpHealthChecker() (client.Object, error) 
 // +kubebuilder:rbac:groups="tuned.openshift.io",resources=profiles,verbs=get;list;watch
 // +kubebuilder:rbac:groups="trident.netapp.io",resources=tridentbackendconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups="trident.netapp.io",resources=tridentbackends,verbs=get;list;watch
+// +kubebuilder:rbac:groups="certm.spark.co.nz",resources=clusterissuers,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
