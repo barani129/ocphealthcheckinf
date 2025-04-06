@@ -97,6 +97,8 @@ func OnPodUpdate(clientset *kubernetes.Clientset, spec *ocpscanv1.OcpHealthCheck
 							}
 						}
 					}
+				} else {
+					log.Log.Info(fmt.Sprintf("Ignoring pod %s's update in namespace %s as it is configured to be ignored", newPo.Name, newPo.Namespace))
 				}
 			}
 		}()

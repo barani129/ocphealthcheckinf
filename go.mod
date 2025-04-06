@@ -3,6 +3,7 @@ module github.com/barani129/ocphealthcheckinf
 go 1.23.2
 
 require (
+	certm.spark.co.nz/appviewx v0.0.0-00010101000000-000000000000
 	github.com/barani129/argocd-operator v0.0.0-20250322112438-699e231aabb5
 	github.com/netapp/trident v0.0.0-20230525142442-610c1ddbe9e0
 	github.com/nmstate/kubernetes-nmstate/api v0.0.0-20240422131619-bc2ede247e1a
@@ -21,6 +22,8 @@ require (
 
 replace k8s.io/client-go => k8s.io/client-go v0.32.2
 
+replace certm.spark.co.nz/appviewx => github.com/barani129/appviewxsample v0.1.0
+
 require (
 	cel.dev/expr v0.18.0 // indirect
 	github.com/Microsoft/go-winio v0.6.0 // indirect
@@ -31,7 +34,6 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bits-and-blooms/bitset v1.12.0 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
-	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect

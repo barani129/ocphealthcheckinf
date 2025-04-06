@@ -61,6 +61,8 @@ func OnPolicyUpdate(staticClientSet *kubernetes.Clientset, spec *ocpscanv1.OcpHe
 					ocphealthcheckutil.SendEmail("Policy-update", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", policy.Name, policy.Namespace), "recovered", fmt.Sprintf("Root policy %s which was previously non-compliant/disabled is now compliant/enabled again in namespace %s in cluster %s", policy.Name, policy.Namespace, runningHost), runningHost, spec)
 				}
 			}
+		} else {
+			log.Log.Info(fmt.Sprintf("Ignoring policy %s's update in namespace %s as it is configured to be ignored", policy.Name, policy.Namespace))
 		}
 	}
 }

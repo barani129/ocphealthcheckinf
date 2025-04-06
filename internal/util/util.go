@@ -583,6 +583,7 @@ func OnPolicyUpdate(newObj interface{}, staticClientSet *kubernetes.Clientset, s
 		return
 	}
 	if IgnoredPolicy(spec, policy) {
+		log.Log.Info(fmt.Sprintf("Ignoring policy %s's update from namespace %s as it is configured to be ignored", policy.Name, policy.Namespace))
 		return
 	}
 	pastTime := metav1.Now().Add(-1 * time.Hour * 6)
@@ -907,6 +908,7 @@ func OnPodUpdate(newObj interface{}, spec *ocpscanv1.OcpHealthCheckSpec, status 
 		return
 	}
 	if IgnoredPod(spec, newPo) {
+		log.Log.Info(fmt.Sprintf("Ignoring pod %s's update from namespace %s as it is configured to be ignored", newPo.Name, newPo.Namespace))
 		return
 	}
 	if mcp, err := CheckMCPINProgress(clientset); err != nil {
