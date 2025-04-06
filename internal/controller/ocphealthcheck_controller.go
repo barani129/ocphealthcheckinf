@@ -289,6 +289,8 @@ func (r *OcpHealthCheckReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		hubutil.OnArgoUpdate(staticClientSet, spec, runningHost)
 		log.Log.Info("Running ManagedCluster Checks")
 		hubutil.OnManagedClusterUpdate(staticClientSet, spec, runningHost)
+		log.Log.Info("Running Spark cluster issuer checks")
+		hubutil.CheckAppviewx(staticClientSet, spec, runningHost)
 		log.Log.Info("Running pod cleanup")
 		util.CleanUpRunningPods(staticClientSet, spec, runningHost)
 		log.Log.Info("Checking HP CSI backend reachability")

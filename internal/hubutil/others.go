@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 
+	certmv1alpha1 "certm.spark.co.nz/appviewx/api/v1alpha1"
 	argoop "github.com/barani129/argocd-operator/api/v1beta1"
 	ocpscanv1 "github.com/barani129/ocphealthcheckinf/api/v1"
 	ocphealthcheckutil "github.com/barani129/ocphealthcheckinf/internal/util"
@@ -191,6 +192,25 @@ func OnTunedProfileUpdate(clientset *kubernetes.Clientset, spec *ocpscanv1.OcpHe
 				ocphealthcheckutil.SendEmail("TunedProfile", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", tp.Name, tp.Namespace), "faulty", fmt.Sprintf("TunedProfile %s's status condition in node %s is either degraded or not-applied in cluster %s, please execute <oc get profiles.tuned.openshift.io %s -n %s -o json | jq .status> to validate it", tp.Status.TunedProfile, tp.Name, runningHost, tp.Name, tp.Namespace), runningHost, spec)
 			} else {
 				ocphealthcheckutil.SendEmail("TunedProfile", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", tp.Name, tp.Namespace), "recovered", fmt.Sprintf("TunedProfile %s's status condition in node %s is recovered in cluster %s, please execute <oc get tunedprofile %s -n %s -o json | jq .status> to validate it", tp.Status.TunedProfile, tp.Name, runningHost, tp.Name, tp.Namespace), runningHost, spec)
+			}
+		}
+	}
+}
+
+func CheckAppviewx(clientset *kubernetes.Clientset, spec *ocpscanv1.OcpHealthCheckSpec, runningHost string) {
+	issuerList := certmv1alpha1.ClusterIssuerList{}
+	err := clientset.RESTClient().Get().AbsPath("/apis/certm.spark.co.nz/v1alpha1/clusterissuers").Do(context.Background()).Into(&issuerList)
+	if err != nil {
+		return
+	}
+	for _, issuer := range issuerList.Items {
+		for _, cond := range issuer.Status.Conditions {
+			if cond.Type == "Ready" {
+				if cond.Status == ocphealthcheckutil.NODEREADYFalse {
+					ocphealthcheckutil.SendEmail("Spark-Cert-Issuer", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "cluster-issuer", issuer.Name), "faulty", fmt.Sprintf("Spark's AppViewx Certificate Issuer %s's status condition is degraded in cluster %s with reason %s, please execute <oc get clusterissuers.certm.spark.co.nz %s -o json | jq .status> to validate it", issuer.Name, runningHost, cond.Reason, issuer.Name), runningHost, spec)
+				} else {
+					ocphealthcheckutil.SendEmail("Spark-Cert-Issuer", fmt.Sprintf("/home/golanguser/files/ocphealth/.%s-%s.txt", "cluster-issuer", issuer.Name), "recovered", fmt.Sprintf("Spark's AppViewx Certificate Issuer %s's status condition is back to working state in cluster %s, please execute <oc get clusterissuers.certm.spark.co.nz %s -o json | jq .status> to validate it", issuer.Name, runningHost, issuer.Name), runningHost, spec)
+				}
 			}
 		}
 	}
